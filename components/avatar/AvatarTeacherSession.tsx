@@ -113,9 +113,9 @@ export function AvatarTeacherSession() {
           <div className="flex items-center gap-2.5">
             <Image
               alt="AI Avatar Teacher"
-              className="shrink-0"
+              className="shrink-0 rounded-md"
               height={32}
-              src="/logo.svg"
+              src="/logo.png"
               width={32}
             />
             <h1 className="font-display text-lg font-semibold tracking-tight sm:text-2xl">
