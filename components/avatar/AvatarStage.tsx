@@ -3,7 +3,6 @@ import Image from "next/image";
 import type { TargetLanguage, TeacherStatus } from "@/types/teacher";
 
 type AvatarStageProps = {
-  avatarLabel: string;
   language: TargetLanguage;
   status: TeacherStatus;
 };
@@ -16,7 +15,7 @@ const statusLabels: Record<TeacherStatus, string> = {
   error: "нужна проверка"
 };
 
-export function AvatarStage({ avatarLabel, language, status }: AvatarStageProps) {
+export function AvatarStage({ language, status }: AvatarStageProps) {
   const isBusy = status === "thinking" || status === "speaking";
   const isSpeaking = status === "speaking";
 
@@ -24,10 +23,7 @@ export function AvatarStage({ avatarLabel, language, status }: AvatarStageProps)
     <div className="relative flex flex-1 items-center justify-center overflow-hidden rounded-lg border border-ink/10 bg-ink shadow-soft min-h-[420px]">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(214,95,77,0.32),transparent_28%),radial-gradient(circle_at_80%_20%,rgba(107,183,168,0.28),transparent_26%),linear-gradient(135deg,#211f1d,#121212)]" />
       <div className="relative z-10 flex w-full h-full flex-col items-center justify-between p-5 text-white">
-        <div className="flex w-full items-center justify-between gap-3">
-          <div className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold backdrop-blur">
-            {avatarLabel}
-          </div>
+        <div className="flex w-full items-center justify-end gap-3">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold backdrop-blur">
             {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
             {statusLabels[status]}

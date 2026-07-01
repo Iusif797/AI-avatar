@@ -103,7 +103,7 @@ export function AvatarTeacherSession() {
 
       <section className="mx-auto grid w-full max-w-7xl flex-1 gap-6 p-4 md:h-[calc(100vh-4.5rem)] md:grid-cols-[380px_1fr] md:p-6 lg:p-8">
         <div className="flex flex-col gap-4 md:h-full md:overflow-y-auto pr-1">
-          <AvatarStage avatarLabel={liveAvatar.label} language={language} status={status} />
+          <AvatarStage language={language} status={status} />
 
           <div className="grid gap-3 rounded-lg border border-[#121212]/10 bg-white p-4 shadow-soft">
             <div className="flex items-center justify-between text-sm font-bold text-[#121212]/70">
