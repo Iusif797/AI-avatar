@@ -36,7 +36,7 @@ export function buildFallbackTeacherReply(language: TargetLanguage, userMessage:
   if (language === "he") {
     return {
       reply:
-        "Отлично, я тебя слышу. Давай скажем это на иврите: שלום, אני לומד עברית. Shalom, ani lomed ivrit. Это значит: привет, я учу иврит. Повтори эту фразу вслух.",
+        "[Этап 1: Разминка] Отлично, я тебя слышу. Давай скажем это на иврите: שלום, אני לומד עברית. Shalom, ani lomed ivrit. Это значит: привет, я учу иврит. Повтори эту фразу вслух.",
       correction: userMessage.trim()
         ? "Пока я работаю в локальном режиме, поэтому даю учебный ответ без настоящей AI-оценки."
         : "Начни с короткой фразы или вопроса.",
@@ -46,9 +46,9 @@ export function buildFallbackTeacherReply(language: TargetLanguage, userMessage:
 
   return {
     reply:
-      "Good start. Let’s say it naturally in English: I am learning English with my AI teacher. Повтори эту фразу, а я помогу звучать увереннее.",
+      "[Этап 1: Разминка] Good start. Let’s say it naturally in English: I am learning English with my AI teacher. Повтори эту фразу, а я помогу звучать увереннее.",
     correction: userMessage.trim()
-      ? "Сейчас включён локальный режим без OpenAI-ключа, поэтому это демонстрационный фидбек."
+      ? "Сейчас включён локальный режим без AI-ключа, поэтому это демонстрационный фидбек."
       : "Напиши или произнеси короткую фразу, и я помогу её улучшить.",
     suggestedPractice: "Repeat: I am learning English with my AI teacher."
   };

@@ -21,6 +21,9 @@ type OpenAIResponseBody = {
   output?: OpenAIResponseItem[];
 };
 
+const LLM_TIMEOUT_MS = 25_000;
+const GEMINI_MODEL = "gemini-2.5-flash";
+
 function collectOutputText(body: OpenAIResponseBody) {
   return (
     body.output
@@ -32,13 +35,22 @@ function collectOutputText(body: OpenAIResponseBody) {
   );
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function askAvatarTeacher(request: TeacherChatRequest): Promise<TeacherChatResponse> {
   const geminiKey = process.env.GEMINI_API_KEY;
   const groqKey = process.env.GROQ_API_KEY;
   const openRouterKey = process.env.OPENROUTER_API_KEY;
   const openAIKey = process.env.OPENAI_API_KEY;
-
-
 
   const systemPrompt = buildAvatarTeacherSystemPrompt(
     request.profile.language,
@@ -72,12 +84,13 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
         }
       ];
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+      const response = await fetchWithTimeout(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "x-goog-api-key": geminiKey
           },
           body: JSON.stringify({
             contents: geminiMessages
@@ -100,7 +113,7 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
 
   if (groqKey) {
     try {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const response = await fetchWithTimeout("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${groqKey}`,
@@ -108,7 +121,7 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
         },
         body: JSON.stringify({
           model: "llama-3.3-70b-versatile",
-          messages: messages
+          messages
         })
       });
 
@@ -139,10 +152,7 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
 
     for (const model of models) {
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 25000);
-
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        const response = await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${openRouterKey}`,
@@ -150,32 +160,25 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
             "HTTP-Referer": siteUrl,
             "X-Title": "AI Language Tutor"
           },
-          body: JSON.stringify({ model, messages }),
-          signal: controller.signal
+          body: JSON.stringify({ model, messages })
         });
-
-        clearTimeout(timeout);
 
         if (response.ok) {
           const body = await response.json();
           const reply = body.choices?.[0]?.message?.content;
           if (reply) {
-            console.log("[OpenRouter] success with model:", model);
             return { reply, source: "openai" as const };
           }
-        } else {
-          const errorBody = await response.text();
-          console.error(`[OpenRouter] ${model} HTTP ${response.status}`, errorBody);
         }
-      } catch (err) {
-        console.error(`[OpenRouter] ${model} error:`, err);
+      } catch {
+        continue;
       }
     }
   }
 
   if (openAIKey) {
     try {
-      const response = await fetch("https://api.openai.com/v1/responses", {
+      const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${openAIKey}`,
@@ -205,4 +208,3 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
     source: "fallback"
   };
 }
-

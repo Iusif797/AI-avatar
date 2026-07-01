@@ -1,10 +1,20 @@
 import { NextResponse } from "next/server";
+import { validateUploadedAudio } from "@/lib/security/audio-validation";
+import { enforceRateLimit, rateLimitResponse } from "@/lib/security/request";
 
 type TranscriptionResponse = {
   text?: string;
 };
 
+const STT_RATE_LIMIT = { limit: 15, windowMs: 60_000 };
+
 export async function POST(request: Request) {
+  const rateLimit = enforceRateLimit(request, "stt", STT_RATE_LIMIT);
+
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit);
+  }
+
   const openAIKey = process.env.OPENAI_API_KEY;
   const groqKey = process.env.GROQ_API_KEY;
   const formData = await request.formData();
@@ -12,6 +22,12 @@ export async function POST(request: Request) {
 
   if (!(audio instanceof File)) {
     return NextResponse.json({ error: "Аудиофайл не найден" }, { status: 400 });
+  }
+
+  const validation = validateUploadedAudio(audio);
+
+  if (!validation.valid) {
+    return NextResponse.json({ error: validation.reason }, { status: 400 });
   }
 
   if (groqKey) {
@@ -32,10 +48,12 @@ export async function POST(request: Request) {
         const data = (await response.json()) as TranscriptionResponse;
         return NextResponse.json({
           text: data.text ?? "",
-          source: "openai"
+          source: "groq"
         });
       }
-    } catch {}
+    } catch {
+      return NextResponse.json({ error: "STT-сервис временно недоступен" }, { status: 503 });
+    }
   }
 
   if (openAIKey) {
@@ -59,12 +77,13 @@ export async function POST(request: Request) {
           source: "openai"
         });
       }
-    } catch {}
+    } catch {
+      return NextResponse.json({ error: "STT-сервис временно недоступен" }, { status: 503 });
+    }
   }
 
-  return NextResponse.json({
-    text: "Научи меня поздороваться",
-    source: "fallback"
-  });
+  return NextResponse.json(
+    { error: "STT не настроен. Добавь GROQ_API_KEY или OPENAI_API_KEY." },
+    { status: 503 }
+  );
 }
-

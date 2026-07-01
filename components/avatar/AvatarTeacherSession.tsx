@@ -1,12 +1,24 @@
 "use client";
 
-import { Bot, Keyboard, Languages, Mic, MicOff, Phone, PhoneOff, Send, Sparkles, Volume2 } from "lucide-react";
+import {
+  Bot,
+  Keyboard,
+  Languages,
+  Mic,
+  MicOff,
+  Phone,
+  PhoneOff,
+  Send,
+  Sparkles,
+  Volume2
+} from "lucide-react";
 import Image from "next/image";
 import { FormEvent, useMemo, useState } from "react";
 import { AvatarStage } from "@/components/avatar/AvatarStage";
+import { LessonProgressBar } from "@/components/avatar/LessonProgressBar";
 import { useAvatarTeacher } from "@/components/avatar/useAvatarTeacher";
-import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useLiveAvatarSession } from "@/components/avatar/useLiveAvatarSession";
+import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { usePersistentLearnerProfile } from "@/hooks/usePersistentLearnerProfile";
 import type { LearnerLevel, TargetLanguage } from "@/types/teacher";
 
@@ -31,9 +43,19 @@ export function AvatarTeacherSession() {
     [language, level]
   );
 
-  const { messages, status, lastFeedback, sendMessage, repeatLastTeacherMessage } =
-    useAvatarTeacher(profile);
   const liveAvatar = useLiveAvatarSession(language);
+
+  const avatarSpeech = useMemo(
+    () => ({
+      isAvailable: liveAvatar.isLiveAvatarActive,
+      speak: liveAvatar.speakText,
+      repeat: liveAvatar.repeatText
+    }),
+    [liveAvatar.isLiveAvatarActive, liveAvatar.repeatText, liveAvatar.speakText]
+  );
+
+  const { messages, status, lastFeedback, currentLessonStage, sendMessage, repeatLastTeacherMessage } =
+    useAvatarTeacher(profile, avatarSpeech);
 
   const recorder = useAudioRecorder({
     onAudioReady: async (audio) => {
@@ -45,11 +67,12 @@ export function AvatarTeacherSession() {
         body: formData
       });
 
+      const data = (await response.json()) as { text?: string; error?: string };
+
       if (!response.ok) {
-        throw new Error("STT failed");
+        throw new Error(data.error ?? "STT failed");
       }
 
-      const data = (await response.json()) as { text?: string };
       const transcript = data.text?.trim();
 
       if (transcript) {
@@ -123,7 +146,18 @@ export function AvatarTeacherSession() {
 
       <section className="mx-auto grid w-full max-w-7xl flex-1 gap-6 p-4 md:h-[calc(100dvh-4.5rem)] md:grid-cols-[380px_1fr] md:p-6 lg:p-8">
         <div className="flex flex-col gap-4 md:h-full md:overflow-y-auto pr-1">
-          <AvatarStage language={language} status={status} />
+          <AvatarStage
+            connectionHint={liveAvatar.connectionHint}
+            connectionLabel={liveAvatar.connectionLabel}
+            connectionMode={liveAvatar.connectionMode}
+            isStreamReady={liveAvatar.isStreamReady}
+            status={status}
+            videoRef={liveAvatar.videoRef}
+            onReconnect={liveAvatar.reconnect}
+            onUnmuteVideo={liveAvatar.unmuteVideo}
+          />
+
+          <LessonProgressBar currentStage={currentLessonStage} />
 
           <div className="flex min-h-[44px] items-center justify-between rounded-lg border border-[#121212]/10 bg-white px-4 py-3 shadow-soft text-sm font-bold text-[#121212]/70">
             <span className="flex items-center gap-2">
@@ -143,7 +177,7 @@ export function AvatarTeacherSession() {
           </div>
         </div>
 
-        <div className="flex flex-col overflow-hidden rounded-lg border border-[#121212]/10 bg-white shadow-soft md:h-full">
+        <div className="flex min-h-[min(72vh,640px)] flex-col overflow-hidden rounded-lg border border-[#121212]/10 bg-white shadow-soft md:min-h-0 md:h-full">
           <div className="flex items-center justify-between border-b border-[#121212]/10 px-4 py-3 bg-white">
             <div className="flex items-center gap-2 font-black">
               <Bot aria-hidden="true" className="h-5 w-5 text-coral" />
@@ -153,7 +187,8 @@ export function AvatarTeacherSession() {
               <div className="flex rounded-full border border-[#121212]/10 bg-[#f7f3eb] p-0.5">
                 <button
                   aria-label="Текстовый режим"
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
+                  aria-pressed={mode === "text"}
+                  className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full px-3 transition ${
                     mode === "text"
                       ? "bg-[#121212] text-white shadow-sm"
                       : "text-[#121212]/50 hover:text-[#121212]"
@@ -162,10 +197,12 @@ export function AvatarTeacherSession() {
                   onClick={() => setMode("text")}
                 >
                   <Keyboard aria-hidden="true" className="h-4 w-4" />
+                  <span className="text-xs font-bold">Чат</span>
                 </button>
                 <button
-                  aria-label="Голосовой режим"
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
+                  aria-label="Режим звонка"
+                  aria-pressed={mode === "voice"}
+                  className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full px-3 transition ${
                     mode === "voice"
                       ? "bg-coral text-white shadow-sm"
                       : "text-[#121212]/50 hover:text-[#121212]"
@@ -174,6 +211,7 @@ export function AvatarTeacherSession() {
                   onClick={() => setMode("voice")}
                 >
                   <Phone aria-hidden="true" className="h-4 w-4" />
+                  <span className="text-xs font-bold">Звонок</span>
                 </button>
               </div>
               <button
@@ -250,8 +288,8 @@ export function AvatarTeacherSession() {
               </form>
             </>
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-between bg-gradient-to-b from-[#fbfaf6] to-[#f0ece2] p-6">
-              <div className="flex-1 flex flex-col items-center justify-center gap-6 w-full">
+            <div className="flex min-h-[420px] flex-1 flex-col items-center justify-between bg-gradient-to-b from-[#fbfaf6] to-[#f0ece2] p-6">
+              <div className="flex flex-1 flex-col items-center justify-center gap-6 w-full">
                 <p
                   aria-live="polite"
                   className={`text-sm font-bold tracking-wide ${
@@ -262,12 +300,12 @@ export function AvatarTeacherSession() {
                 </p>
 
                 <div className="relative grid place-items-center">
-                  {recorder.isRecording && (
+                  {recorder.isRecording ? (
                     <>
                       <span className="voice-pulse absolute h-28 w-28 rounded-full border-2 border-coral/40" />
                       <span className="voice-pulse voice-pulse-delayed absolute h-36 w-36 rounded-full border border-coral/20" />
                     </>
-                  )}
+                  ) : null}
                   <button
                     aria-label={recorder.isRecording ? "Остановить запись" : "Начать говорить"}
                     className={`relative z-10 grid h-20 w-20 place-items-center rounded-full shadow-lg transition-all active:scale-90 ${
@@ -280,6 +318,7 @@ export function AvatarTeacherSession() {
                     disabled={recorder.isTranscribing || isBusy}
                     type="button"
                     onClick={() => {
+                      liveAvatar.unmuteVideo();
                       if (recorder.isRecording) {
                         recorder.stopRecording();
                       } else {
@@ -290,7 +329,7 @@ export function AvatarTeacherSession() {
                     {recorder.isRecording ? (
                       <MicOff className="h-8 w-8" />
                     ) : (
-                      <Mic className={`h-8 w-8 ${isBusy ? "" : ""}`} />
+                      <Mic className="h-8 w-8" />
                     )}
                   </button>
                 </div>

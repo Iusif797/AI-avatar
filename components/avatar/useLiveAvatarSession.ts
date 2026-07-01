@@ -1,83 +1,197 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  LiveAvatarSession,
+  SessionEvent,
+  SessionState
+} from "@heygen/liveavatar-web-sdk";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { speakWithLiveAvatar } from "@/lib/liveavatar-speak";
 import type { TargetLanguage } from "@/types/teacher";
 
-type LiveAvatarAvailability =
-  | {
-      mode: "checking";
-      label: string;
-    }
-  | {
-      mode: "liveavatar";
-      label: string;
-      sessionId: string;
-    }
-  | {
-      mode: "fallback";
-      label: string;
-    };
+export type LiveAvatarConnectionMode = "checking" | "live" | "fallback";
+
+const KEEP_ALIVE_INTERVAL_MS = 45000;
+
+type AvatarTokenResponse =
+  | { mode: "liveavatar"; sessionId: string; sessionToken: string }
+  | { mode: "fallback"; message: string };
+
+function attachStreamToVideo(session: LiveAvatarSession, videoElement: HTMLVideoElement) {
+  session.attach(videoElement);
+  videoElement.muted = true;
+  void videoElement.play().catch(() => undefined);
+}
 
 export function useLiveAvatarSession(language: TargetLanguage) {
-  const [availability, setAvailability] = useState<LiveAvatarAvailability>({
-    mode: "checking",
-    label: "проверяю LiveAvatar"
-  });
+  const [connectionMode, setConnectionMode] = useState<LiveAvatarConnectionMode>("checking");
+  const [connectionLabel, setConnectionLabel] = useState("проверяю LiveAvatar");
+  const [connectionHint, setConnectionHint] = useState<string | null>(null);
+  const [isStreamReady, setIsStreamReady] = useState(false);
+  const [connectNonce, setConnectNonce] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const sessionRef = useRef<LiveAvatarSession | null>(null);
+  const connectGenerationRef = useRef(0);
 
   useEffect(() => {
-    let isMounted = true;
+    const generation = connectGenerationRef.current + 1;
+    connectGenerationRef.current = generation;
+    let session: LiveAvatarSession | null = null;
+    let keepAliveTimer: number | null = null;
 
-    async function checkToken() {
-      setAvailability({
-        mode: "checking",
-        label: "проверяю LiveAvatar"
-      });
+    function isCurrentConnection() {
+      return connectGenerationRef.current === generation;
+    }
+
+    function setFallbackState(message: string) {
+      if (!isCurrentConnection()) {
+        return;
+      }
+
+      setConnectionMode("fallback");
+      setConnectionLabel("локальный аватар");
+      setConnectionHint(message);
+      setIsStreamReady(false);
+    }
+
+    async function connectLiveAvatar() {
+      setConnectionMode("checking");
+      setConnectionLabel("проверяю LiveAvatar");
+      setConnectionHint(null);
+      setIsStreamReady(false);
 
       try {
         const response = await fetch("/api/avatar/token", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ language })
         });
 
-        const data = (await response.json()) as
-          | { mode: "liveavatar"; sessionId: string }
-          | { mode: "fallback"; message: string };
+        const data = (await response.json()) as AvatarTokenResponse & { error?: string };
 
-        if (!isMounted) {
+        if (!isCurrentConnection()) {
           return;
         }
 
-        if (data.mode === "liveavatar") {
-          setAvailability({
-            mode: "liveavatar",
-            label: "LiveAvatar готов",
-            sessionId: data.sessionId
-          });
-        } else {
-          setAvailability({
-            mode: "fallback",
-            label: "локальный аватар"
-          });
+        if (!response.ok) {
+          setFallbackState(data.error ?? `Ошибка подключения (${response.status}).`);
+          return;
         }
-      } catch {
-        if (isMounted) {
-          setAvailability({
-            mode: "fallback",
-            label: "локальный аватар"
-          });
+
+        if (data.mode !== "liveavatar" || !data.sessionToken) {
+          const fallbackMessage =
+            data.mode === "fallback" ? data.message : "LiveAvatar недоступен.";
+          setFallbackState(fallbackMessage ?? "LiveAvatar недоступен.");
+          return;
         }
+
+        session = new LiveAvatarSession(data.sessionToken);
+        sessionRef.current = session;
+
+        session.on(SessionEvent.SESSION_STREAM_READY, () => {
+          if (!isCurrentConnection()) {
+            return;
+          }
+
+          setIsStreamReady(true);
+          setConnectionHint(null);
+
+          if (videoRef.current) {
+            attachStreamToVideo(session!, videoRef.current);
+          }
+        });
+
+        session.on(SessionEvent.SESSION_DISCONNECTED, () => {
+          setFallbackState("Сессия LiveAvatar завершена.");
+        });
+
+        await session.start();
+
+        if (!isCurrentConnection()) {
+          await session.stop();
+          return;
+        }
+
+        setConnectionMode("live");
+        setConnectionLabel("LiveAvatar подключён");
+        setConnectionHint(null);
+
+        keepAliveTimer = window.setInterval(() => {
+          if (session?.state === SessionState.CONNECTED) {
+            void session.keepAlive().catch(() => undefined);
+          }
+        }, KEEP_ALIVE_INTERVAL_MS);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error && error.message
+            ? error.message
+            : "Не удалось подключить LiveAvatar.";
+        setFallbackState(errorMessage);
       }
     }
 
-    void checkToken();
+    void connectLiveAvatar();
 
     return () => {
-      isMounted = false;
-    };
-  }, [language]);
+      if (keepAliveTimer !== null) {
+        window.clearInterval(keepAliveTimer);
+      }
 
-  return availability;
+      if (connectGenerationRef.current === generation) {
+        void session?.stop();
+        sessionRef.current = null;
+      }
+    };
+  }, [language, connectNonce]);
+
+  useEffect(() => {
+    if (!isStreamReady || !videoRef.current || !sessionRef.current) {
+      return;
+    }
+
+    attachStreamToVideo(sessionRef.current, videoRef.current);
+  }, [isStreamReady]);
+
+  const reconnect = useCallback(() => {
+    setConnectNonce((value) => value + 1);
+  }, []);
+
+  const unmuteVideo = useCallback(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = false;
+    }
+  }, []);
+
+  const speakText = useCallback(async (text: string) => {
+    const session = sessionRef.current;
+
+    if (!session || connectionMode !== "live") {
+      return false;
+    }
+
+    return speakWithLiveAvatar(session, text, "message");
+  }, [connectionMode]);
+
+  const repeatText = useCallback(async (text: string) => {
+    const session = sessionRef.current;
+
+    if (!session || connectionMode !== "live") {
+      return false;
+    }
+
+    return speakWithLiveAvatar(session, text, "repeat");
+  }, [connectionMode]);
+
+  return {
+    connectionMode,
+    connectionLabel,
+    connectionHint,
+    isStreamReady,
+    videoRef,
+    isLiveAvatarActive: connectionMode === "live" && isStreamReady,
+    reconnect,
+    unmuteVideo,
+    speakText,
+    repeatText
+  };
 }
