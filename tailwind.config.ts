@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import defaultTheme from "tailwindcss/defaultTheme";
 
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
@@ -10,6 +11,15 @@ const config: Config = {
         coral: "#d65f4d",
         mint: "#6bb7a8",
         violet: "#6957a8"
+      },
+      fontFamily: {
+        sans: [
+          "-apple-system",
+          "BlinkMacSystemFont",
+          '"Segoe UI"',
+          ...defaultTheme.fontFamily.sans
+        ],
+        display: ["ui-serif", "Georgia", "Cambria", '"Times New Roman"', ...defaultTheme.fontFamily.serif]
       },
       boxShadow: {
         soft: "0 22px 70px rgba(18, 18, 18, 0.12)"
