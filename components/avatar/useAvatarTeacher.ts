@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { toSpeechSegments } from "@/lib/speech";
 import type {
   ChatMessage,
   TeacherChatResponse,
@@ -10,6 +11,45 @@ import type {
 
 function createId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+}
+
+function speakSegment(text: string, lang: string): Promise<void> {
+  return new Promise((resolve) => {
+    const synth = window.speechSynthesis;
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voices = synth.getVoices();
+    const langVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith(lang.toLowerCase()));
+    const preferredVoice = langVoices.find((voice) => {
+      const name = voice.name.toLowerCase();
+      return name.includes("siri") || name.includes("premium") || name.includes("enhanced") || name.includes("google");
+    }) || langVoices[0];
+    let didFinish = false;
+
+    utterance.lang = lang;
+    utterance.rate = 0.95;
+    utterance.pitch = 1.05;
+    utterance.volume = 1;
+
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+    }
+
+    const finish = () => {
+      if (didFinish) {
+        return;
+      }
+
+      didFinish = true;
+      window.clearTimeout(timeoutId);
+      resolve();
+    };
+
+    const timeoutId = window.setTimeout(finish, Math.min(12000, 700 + text.length * 55));
+
+    utterance.onend = finish;
+    utterance.onerror = finish;
+    synth.speak(utterance);
+  });
 }
 
 const initialTeacherMessage: ChatMessage = {
@@ -34,67 +74,45 @@ export function useAvatarTeacher(profile: TeacherProfile) {
     [messages]
   );
 
-  const speak = useCallback(
-    async (text: string) => {
-      const speechId = speechIdRef.current + 1;
-      speechIdRef.current = speechId;
-      setStatus("speaking");
+  const speak = useCallback(async (text: string) => {
+    const speechId = speechIdRef.current + 1;
+    speechIdRef.current = speechId;
+    setStatus("speaking");
 
-      const fallbackDuration = Math.min(12000, 900 + text.length * 45);
+    const segments = toSpeechSegments(text);
+    const isCurrent = () => speechIdRef.current === speechId;
+    const supportsSpeech =
+      "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 
-      if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
-        await new Promise((resolve) => setTimeout(resolve, fallbackDuration));
+    if (!supportsSpeech || segments.length === 0) {
+      const spokenLength =
+        segments.reduce((total, segment) => total + segment.text.length, 0) || text.length;
 
-        if (speechIdRef.current === speechId) {
-          setStatus("idle");
-        }
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(12000, 900 + spokenLength * 45))
+      );
 
+      if (isCurrent()) {
+        setStatus("idle");
+      }
+
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    for (const segment of segments) {
+      if (!isCurrent()) {
         return;
       }
 
-      await new Promise<void>((resolve) => {
-        const synth = window.speechSynthesis;
-        const utterance = new SpeechSynthesisUtterance(text);
-        const hasCyrillic = /[а-яё]/i.test(text);
-        const lang = hasCyrillic ? "ru-RU" : profile.language === "he" ? "he-IL" : "en-US";
-        const voices = synth.getVoices();
-        const preferredVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith(lang.toLowerCase()));
-        let didFinish = false;
+      await speakSegment(segment.text, segment.lang);
+    }
 
-        utterance.lang = lang;
-        utterance.rate = 0.95;
-        utterance.pitch = 1.05;
-        utterance.volume = 1;
-
-        if (preferredVoice) {
-          utterance.voice = preferredVoice;
-        }
-
-        const finish = () => {
-          if (didFinish) {
-            return;
-          }
-
-          didFinish = true;
-          window.clearTimeout(timeoutId);
-
-          if (speechIdRef.current === speechId) {
-            setStatus("idle");
-          }
-
-          resolve();
-        };
-
-        const timeoutId = window.setTimeout(finish, fallbackDuration);
-
-        utterance.onend = finish;
-        utterance.onerror = finish;
-        synth.cancel();
-        synth.speak(utterance);
-      });
-    },
-    [profile.language]
-  );
+    if (isCurrent()) {
+      setStatus("idle");
+    }
+  }, []);
 
   const sendMessage = useCallback(
     async (userMessage: string) => {

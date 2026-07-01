@@ -134,7 +134,7 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
           "X-Title": "AI Language Tutor"
         },
         body: JSON.stringify({
-          model: "openrouter/free",
+          model: process.env.OPENROUTER_MODEL ?? "meta-llama/llama-3.3-70b-instruct:free",
           messages: messages
         })
       });
