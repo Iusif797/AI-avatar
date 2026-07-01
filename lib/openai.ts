@@ -131,40 +131,51 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
   }
 
   if (openRouterKey) {
-    try {
-      const siteUrl = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : "http://localhost:3000";
+    const siteUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000";
 
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${openRouterKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": siteUrl,
-          "X-Title": "AI Language Tutor"
-        },
-        body: JSON.stringify({
-          model: process.env.OPENROUTER_MODEL ?? "meta-llama/llama-3.3-70b-instruct:free",
-          messages: messages
-        })
-      });
+    const models = [
+      process.env.OPENROUTER_MODEL,
+      "meta-llama/llama-3.3-70b-instruct:free",
+      "google/gemma-4-31b-it:free",
+      "qwen/qwen3-coder:free",
+      "meta-llama/llama-3.2-3b-instruct:free"
+    ].filter(Boolean) as string[];
 
-      if (response.ok) {
-        const body = await response.json();
-        const reply = body.choices?.[0]?.message?.content;
-        if (reply) {
-          return {
-            reply,
-            source: "openai"
-          };
+    for (const model of models) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 25000);
+
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${openRouterKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": siteUrl,
+            "X-Title": "AI Language Tutor"
+          },
+          body: JSON.stringify({ model, messages }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeout);
+
+        if (response.ok) {
+          const body = await response.json();
+          const reply = body.choices?.[0]?.message?.content;
+          if (reply) {
+            console.log("[OpenRouter] success with model:", model);
+            return { reply, source: "openai" as const };
+          }
+        } else {
+          const errorBody = await response.text();
+          console.error(`[OpenRouter] ${model} HTTP ${response.status}`, errorBody);
         }
-      } else {
-        const errorBody = await response.text();
-        console.error("[OpenRouter] HTTP", response.status, errorBody);
+      } catch (err) {
+        console.error(`[OpenRouter] ${model} error:`, err);
       }
-    } catch (err) {
-      console.error("[OpenRouter] fetch error", err);
     }
   }
 
