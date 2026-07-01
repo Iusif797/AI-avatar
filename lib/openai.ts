@@ -38,6 +38,13 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
   const openRouterKey = process.env.OPENROUTER_API_KEY;
   const openAIKey = process.env.OPENAI_API_KEY;
 
+  console.log("[askAvatarTeacher] keys:", {
+    gemini: !!geminiKey,
+    groq: !!groqKey,
+    openRouter: !!openRouterKey,
+    openAI: !!openAIKey
+  });
+
   const systemPrompt = buildAvatarTeacherSystemPrompt(
     request.profile.language,
     request.profile.level,
@@ -125,12 +132,16 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
 
   if (openRouterKey) {
     try {
+      const siteUrl = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000";
+
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "http://localhost:3000",
+          "HTTP-Referer": siteUrl,
           "X-Title": "AI Language Tutor"
         },
         body: JSON.stringify({
@@ -148,8 +159,13 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
             source: "openai"
           };
         }
+      } else {
+        const errorBody = await response.text();
+        console.error("[OpenRouter] HTTP", response.status, errorBody);
       }
-    } catch {}
+    } catch (err) {
+      console.error("[OpenRouter] fetch error", err);
+    }
   }
 
   if (openAIKey) {

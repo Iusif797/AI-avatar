@@ -152,7 +152,7 @@ export function useAvatarTeacher(profile: TeacherProfile) {
         };
 
         setMessages([...nextHistory, teacherEntry]);
-        setLastFeedback(data.correction ?? (data.source === "fallback" ? "Работает demo-режим." : ""));
+        setLastFeedback(data.correction ?? (data.source === "fallback" ? "AI-ключ не подключён. Проверьте переменную OPENROUTER_API_KEY в настройках Vercel и сделайте Redeploy." : ""));
         await speak(data.reply);
       } catch {
         const teacherEntry: ChatMessage = {
