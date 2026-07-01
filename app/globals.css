@@ -44,6 +44,11 @@ select:focus-visible {
 
 .avatar-frame {
   animation: avatar-breathe 5.8s ease-in-out infinite;
+  transition: transform 0.3s ease;
+}
+
+.avatar-frame.is-speaking {
+  animation: avatar-talk-bob 1.6s ease-in-out infinite;
 }
 
 .avatar-ring {
@@ -85,6 +90,11 @@ select:focus-visible {
 
 .avatar-mouth {
   box-shadow: 0 0 18px rgba(214, 95, 77, 0.62);
+  transition: all 0.15s ease;
+}
+
+.avatar-mouth.is-speaking {
+  animation: avatar-talk 0.16s ease-in-out infinite alternate;
 }
 
 .avatar-wave-bar {
@@ -120,6 +130,21 @@ select:focus-visible {
   }
 }
 
+@keyframes avatar-talk-bob {
+  0%, 100% {
+    transform: rotate(0deg) scale(1) translate3d(0, 0, 0);
+  }
+  25% {
+    transform: rotate(0.8deg) scale(1.01) translate3d(1px, -2px, 0);
+  }
+  50% {
+    transform: rotate(-0.5deg) scale(1.005) translate3d(-1px, -1px, 0);
+  }
+  75% {
+    transform: rotate(0.4deg) scale(1.015) translate3d(0, -3px, 0);
+  }
+}
+
 @keyframes avatar-ring {
   0% {
     transform: scale(0.82);
@@ -128,7 +153,6 @@ select:focus-visible {
 
   100% {
     transform: scale(1.08);
-    opacity: 0;
   }
 }
 
@@ -156,5 +180,16 @@ select:focus-visible {
 
   50% {
     height: 1.75rem;
+  }
+}
+
+@keyframes avatar-talk {
+  0% {
+    height: 0.35rem;
+    transform: translate(-50%, 0) scaleY(0.6);
+  }
+  100% {
+    height: 1.15rem;
+    transform: translate(-50%, -2px) scaleY(1.3);
   }
 }
