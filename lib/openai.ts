@@ -38,12 +38,7 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
   const openRouterKey = process.env.OPENROUTER_API_KEY;
   const openAIKey = process.env.OPENAI_API_KEY;
 
-  console.log("[askAvatarTeacher] keys:", {
-    gemini: !!geminiKey,
-    groq: !!groqKey,
-    openRouter: !!openRouterKey,
-    openAI: !!openAIKey
-  });
+
 
   const systemPrompt = buildAvatarTeacherSystemPrompt(
     request.profile.language,
@@ -137,10 +132,9 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
 
     const models = [
       process.env.OPENROUTER_MODEL,
-      "meta-llama/llama-3.3-70b-instruct:free",
       "google/gemma-4-31b-it:free",
-      "qwen/qwen3-coder:free",
-      "meta-llama/llama-3.2-3b-instruct:free"
+      "google/gemma-4-26b-a4b-it:free",
+      "nvidia/nemotron-3-super-120b-a12b:free"
     ].filter(Boolean) as string[];
 
     for (const model of models) {

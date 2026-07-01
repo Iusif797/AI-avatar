@@ -219,3 +219,22 @@ select:focus-visible {
     width: 17%;
   }
 }
+
+.voice-pulse {
+  animation: voice-ring 1.8s ease-out infinite;
+}
+
+.voice-pulse-delayed {
+  animation-delay: 0.6s;
+}
+
+@keyframes voice-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
