@@ -105,27 +105,21 @@ export function AvatarTeacherSession() {
         <div className="flex flex-col gap-4 md:h-full md:overflow-y-auto pr-1">
           <AvatarStage language={language} status={status} />
 
-          <div className="grid gap-3 rounded-lg border border-[#121212]/10 bg-white p-4 shadow-soft">
-            <div className="flex items-center justify-between text-sm font-bold text-[#121212]/70">
-              <span className="flex items-center gap-2">
-                <Languages className="h-4 w-4 text-violet" />
-                Уровень обучения
-              </span>
-              <select
-                className="rounded-md border border-[#121212]/15 bg-[#f7f3eb] px-2 py-1 text-xs font-bold text-[#121212] focus:outline-none"
-                value={level}
-                onChange={(event) => setLevel(event.target.value as LearnerLevel)}
-              >
-                <option>A1</option>
-                <option>A2</option>
-                <option>B1</option>
-                <option>B2</option>
-              </select>
-            </div>
-            <p className="text-xs leading-relaxed text-[#121212]/60 bg-[#f7f3eb]/50 rounded-md p-2.5 border border-[#121212]/5">
-              <span className="font-bold block text-[#121212]/80 mb-0.5">Ваша цель:</span>
-              {profile.goal}
-            </p>
+          <div className="flex items-center justify-between rounded-lg border border-[#121212]/10 bg-white px-4 py-3 shadow-soft text-sm font-bold text-[#121212]/70">
+            <span className="flex items-center gap-2">
+              <Languages className="h-4 w-4 text-violet" />
+              Уровень обучения
+            </span>
+            <select
+              className="rounded-md border border-[#121212]/15 bg-[#f7f3eb] px-2.5 py-1 text-xs font-bold text-[#121212] focus:outline-none"
+              value={level}
+              onChange={(event) => setLevel(event.target.value as LearnerLevel)}
+            >
+              <option>A1</option>
+              <option>A2</option>
+              <option>B1</option>
+              <option>B2</option>
+            </select>
           </div>
         </div>
 

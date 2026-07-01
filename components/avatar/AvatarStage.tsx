@@ -20,7 +20,7 @@ export function AvatarStage({ language, status }: AvatarStageProps) {
   const isSpeaking = status === "speaking";
 
   return (
-    <div className="relative flex flex-1 items-center justify-center overflow-hidden rounded-lg border border-ink/10 bg-ink shadow-soft min-h-[420px]">
+    <div className="relative flex flex-1 items-center justify-center overflow-hidden rounded-lg border border-ink/10 bg-ink shadow-soft min-h-[280px] md:min-h-[420px]">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(214,95,77,0.32),transparent_28%),radial-gradient(circle_at_80%_20%,rgba(107,183,168,0.28),transparent_26%),linear-gradient(135deg,#211f1d,#121212)]" />
       <div className="relative z-10 flex w-full h-full flex-col items-center justify-between p-5 text-white">
         <div className="flex w-full items-center justify-end gap-3">
