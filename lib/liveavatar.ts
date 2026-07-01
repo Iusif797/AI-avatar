@@ -26,7 +26,6 @@ const LIVEAVATAR_TOKEN_URL = "https://api.liveavatar.com/v1/sessions/token";
 const PRODUCTION_SESSION_DURATION_SECONDS = 120;
 const SANDBOX_SESSION_DURATION_SECONDS = 60;
 const SANDBOX_AVATAR_ID = "dd73ea75-1218-4ef3-92ce-606d5f7fbc0a";
-const DEFAULT_FEMALE_AVATAR_ID = "c72a9099-84b9-4d5d-98f4-a19ba131e654";
 
 function resolveMaxSessionDuration(isSandbox: boolean): number {
   const configuredDuration = Number(process.env.LIVEAVATAR_MAX_SESSION_DURATION);
@@ -41,8 +40,9 @@ function resolveMaxSessionDuration(isSandbox: boolean): number {
 export async function createLiveAvatarToken(_language: TargetLanguage): Promise<AvatarTokenResult> {
   const apiKey = process.env.HEYGEN_API_KEY;
   const isSandbox = process.env.LIVEAVATAR_SANDBOX !== "false";
-  const avatarId =
-    process.env.HEYGEN_AVATAR_ID || (isSandbox ? SANDBOX_AVATAR_ID : DEFAULT_FEMALE_AVATAR_ID);
+  const avatarId = isSandbox
+    ? SANDBOX_AVATAR_ID
+    : process.env.HEYGEN_AVATAR_ID || SANDBOX_AVATAR_ID;
 
   if (!apiKey || !avatarId) {
     return {
@@ -51,11 +51,11 @@ export async function createLiveAvatarToken(_language: TargetLanguage): Promise<
     };
   }
 
-  if (isSandbox && avatarId !== SANDBOX_AVATAR_ID) {
+  if (isSandbox && process.env.HEYGEN_AVATAR_ID && process.env.HEYGEN_AVATAR_ID !== SANDBOX_AVATAR_ID) {
     return {
       mode: "fallback",
       message:
-        "В sandbox поддерживается только тестовый аватар. Укажите HEYGEN_AVATAR_ID=dd73ea75-1218-4ef3-92ce-606d5f7fbc0a или LIVEAVATAR_SANDBOX=false."
+        "Бесплатный sandbox: задайте LIVEAVATAR_SANDBOX=true и HEYGEN_AVATAR_ID=dd73ea75-1218-4ef3-92ce-606d5f7fbc0a."
     };
   }
 

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { speakWithLiveAvatar } from "@/lib/liveavatar-speak";
 import type { TargetLanguage } from "@/types/teacher";
 
-export type LiveAvatarConnectionMode = "checking" | "live" | "fallback";
+export type LiveAvatarConnectionMode = "idle" | "checking" | "live" | "fallback";
 
 const KEEP_ALIVE_INTERVAL_MS = 45000;
 
@@ -23,9 +23,9 @@ function attachStreamToVideo(session: LiveAvatarSession, videoElement: HTMLVideo
   void videoElement.play().catch(() => undefined);
 }
 
-export function useLiveAvatarSession(language: TargetLanguage) {
-  const [connectionMode, setConnectionMode] = useState<LiveAvatarConnectionMode>("checking");
-  const [connectionLabel, setConnectionLabel] = useState("проверяю LiveAvatar");
+export function useLiveAvatarSession(language: TargetLanguage, isCallModeActive: boolean) {
+  const [connectionMode, setConnectionMode] = useState<LiveAvatarConnectionMode>("idle");
+  const [connectionLabel, setConnectionLabel] = useState("режим чата");
   const [connectionHint, setConnectionHint] = useState<string | null>(null);
   const [isStreamReady, setIsStreamReady] = useState(false);
   const [connectNonce, setConnectNonce] = useState(0);
@@ -34,6 +34,15 @@ export function useLiveAvatarSession(language: TargetLanguage) {
   const connectGenerationRef = useRef(0);
 
   useEffect(() => {
+    if (!isCallModeActive) {
+      setConnectionMode("idle");
+      setConnectionLabel("режим чата");
+      setConnectionHint(null);
+      setIsStreamReady(false);
+      sessionRef.current = null;
+      return;
+    }
+
     const generation = connectGenerationRef.current + 1;
     connectGenerationRef.current = generation;
     let session: LiveAvatarSession | null = null;
@@ -113,7 +122,7 @@ export function useLiveAvatarSession(language: TargetLanguage) {
         }
 
         setConnectionMode("live");
-        setConnectionLabel("LiveAvatar подключён");
+        setConnectionLabel("HeyGen live");
         setConnectionHint(null);
 
         keepAliveTimer = window.setInterval(() => {
@@ -142,7 +151,7 @@ export function useLiveAvatarSession(language: TargetLanguage) {
         sessionRef.current = null;
       }
     };
-  }, [language, connectNonce]);
+  }, [language, connectNonce, isCallModeActive]);
 
   useEffect(() => {
     if (!isStreamReady || !videoRef.current || !sessionRef.current) {
@@ -188,7 +197,7 @@ export function useLiveAvatarSession(language: TargetLanguage) {
     connectionHint,
     isStreamReady,
     videoRef,
-    isLiveAvatarActive: connectionMode === "live" && isStreamReady,
+    isLiveAvatarActive: isCallModeActive && connectionMode === "live" && isStreamReady,
     reconnect,
     unmuteVideo,
     speakText,

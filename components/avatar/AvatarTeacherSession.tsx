@@ -43,15 +43,16 @@ export function AvatarTeacherSession() {
     [language, level]
   );
 
-  const liveAvatar = useLiveAvatarSession(language);
+  const isCallMode = mode === "voice";
+  const liveAvatar = useLiveAvatarSession(language, isCallMode);
 
   const avatarSpeech = useMemo(
     () => ({
-      isAvailable: liveAvatar.isLiveAvatarActive,
+      isAvailable: isCallMode && liveAvatar.isLiveAvatarActive,
       speak: liveAvatar.speakText,
       repeat: liveAvatar.repeatText
     }),
-    [liveAvatar.isLiveAvatarActive, liveAvatar.repeatText, liveAvatar.speakText]
+    [isCallMode, liveAvatar.isLiveAvatarActive, liveAvatar.repeatText, liveAvatar.speakText]
   );
 
   const { messages, status, lastFeedback, currentLessonStage, sendMessage, repeatLastTeacherMessage } =
@@ -147,6 +148,7 @@ export function AvatarTeacherSession() {
       <section className="mx-auto grid w-full max-w-7xl flex-1 gap-6 p-4 md:h-[calc(100dvh-4.5rem)] md:grid-cols-[380px_1fr] md:p-6 lg:p-8">
         <div className="flex flex-col gap-4 md:h-full md:overflow-y-auto pr-1">
           <AvatarStage
+            variant={isCallMode ? "call" : "chat"}
             connectionHint={liveAvatar.connectionHint}
             connectionLabel={liveAvatar.connectionLabel}
             connectionMode={liveAvatar.connectionMode}
