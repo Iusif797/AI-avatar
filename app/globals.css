@@ -71,10 +71,10 @@ select:focus-visible {
 .avatar-blink {
   position: absolute;
   top: 38%;
-  width: 2.15rem;
-  height: 0.58rem;
+  width: 10%;
+  height: 2.7%;
   border-radius: 999px;
-  background: rgba(32, 21, 20, 0.72);
+  background: rgba(32, 21, 20, 0.85);
   opacity: 0;
   transform: scaleY(0);
   animation: avatar-blink 5.6s ease-in-out infinite;
@@ -89,11 +89,21 @@ select:focus-visible {
 }
 
 .avatar-mouth {
-  box-shadow: 0 0 18px rgba(214, 95, 77, 0.62);
-  transition: all 0.15s ease;
+  position: absolute;
+  top: 53.5%;
+  left: 50%;
+  width: 15%;
+  height: 2.5%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: #c85e5a;
+  opacity: 0;
+  transition: all 0.25s ease;
+  box-shadow: 0 0 10px rgba(200, 94, 90, 0.7);
 }
 
 .avatar-mouth.is-speaking {
+  opacity: 1;
   animation: avatar-talk 0.16s ease-in-out infinite alternate;
 }
 
@@ -185,11 +195,11 @@ select:focus-visible {
 
 @keyframes avatar-talk {
   0% {
-    height: 0.35rem;
-    transform: translate(-50%, 0) scaleY(0.6);
+    height: 2%;
+    width: 13%;
   }
   100% {
-    height: 1.15rem;
-    transform: translate(-50%, -2px) scaleY(1.3);
+    height: 7%;
+    width: 17%;
   }
 }

@@ -58,11 +58,7 @@ export function AvatarStage({ avatarLabel, language, status }: AvatarStageProps)
               <div className="avatar-blink avatar-blink-left" />
               <div className="avatar-blink avatar-blink-right" />
               <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-ink/70 to-transparent" />
-              <div
-                className={`avatar-mouth absolute bottom-6 md:bottom-8 left-1/2 h-2 -translate-x-1/2 rounded-full bg-coral transition-all ${
-                  isSpeaking ? "w-14 is-speaking" : "w-8"
-                }`}
-              />
+              <div className={`avatar-mouth ${isSpeaking ? "is-speaking" : ""}`} />
               <div className="absolute bottom-10 md:bottom-12 left-1/2 flex -translate-x-1/2 items-end gap-1">
                 {[0, 1, 2, 3, 4].map((bar) => (
                   <span
