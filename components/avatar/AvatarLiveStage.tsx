@@ -37,7 +37,7 @@ export function AvatarLiveStage({
   const isConnecting = connectionMode === "checking";
 
   return (
-    <div className="relative w-full overflow-hidden rounded-[1.75rem] shadow-[0_24px_60px_-20px_rgba(0,0,0,0.4)]">
+    <div className="relative w-full overflow-hidden rounded-lg border border-white/70 bg-[#121212] shadow-[0_24px_70px_rgba(18,18,18,0.18)] ring-1 ring-[#121212]/8">
       <div
         className="relative aspect-[4/5] w-full bg-[#1c1c1c]"
         role={showLiveVideo ? "button" : undefined}
@@ -64,21 +64,24 @@ export function AvatarLiveStage({
           playsInline
         />
         {!showLiveVideo ? (
-          <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-[#2a2a2a] to-[#121212] px-6 text-center text-white/80">
+          <div className="absolute inset-0 grid place-items-center bg-[linear-gradient(180deg,#263844_0%,#111820_100%)] px-6 text-center text-white/80">
             {isConnecting ? (
-              <Loader2 aria-hidden="true" className="h-10 w-10 animate-spin text-white/70" />
+              <div className="grid gap-4 text-center">
+                <Loader2 aria-hidden="true" className="mx-auto h-10 w-10 animate-spin text-white/70" />
+                <p className="text-sm font-bold text-white/62">Подключение...</p>
+              </div>
             ) : (
               <p className="text-sm font-semibold leading-relaxed">{connectionHint ?? "Подключение к HeyGen…"}</p>
             )}
           </div>
         ) : null}
-        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
-          <span className="rounded-full bg-black/45 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white/90 backdrop-blur-sm">
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-4">
+          <span className="rounded-full bg-white/82 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#121212] shadow-sm backdrop-blur">
             {connectionLabel}
           </span>
           <span
             aria-live="polite"
-            className="inline-flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1 text-[10px] font-bold text-white/90 backdrop-blur-sm"
+            className="inline-flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white/90 backdrop-blur-sm"
             role="status"
           >
             {isBusy ? (
@@ -90,10 +93,10 @@ export function AvatarLiveStage({
           </span>
         </div>
         {connectionHint && !showLiveVideo ? (
-          <div className="absolute inset-x-3 bottom-3 rounded-xl bg-coral/90 p-3 text-center text-xs font-bold text-white">
+          <div className="absolute inset-x-4 bottom-4 rounded-lg border border-white/15 bg-coral/92 p-3 text-center text-xs font-bold text-white shadow-lg backdrop-blur">
             <p>{connectionHint}</p>
             <button
-              className="mt-2 inline-flex min-h-[36px] items-center rounded-lg bg-white/15 px-4 text-[11px] uppercase tracking-wide"
+              className="mt-2 inline-flex min-h-[36px] items-center rounded-md bg-white/16 px-4 text-[11px] uppercase tracking-wide transition hover:bg-white/24"
               type="button"
               onClick={onReconnect}
             >

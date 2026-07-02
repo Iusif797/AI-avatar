@@ -17,6 +17,10 @@ export const LESSON_STAGES: LessonStageDefinition[] = [
 
 const STAGE_PATTERN = /\[Этап\s+(\d)\s*:\s*([^\]]+)\]/i;
 
+export function stripStageLabel(text: string): string {
+  return text.replace(STAGE_PATTERN, "").replace(/^\s*[-–—:]\s*/, "").trim();
+}
+
 export function parseLessonStage(text: string): LessonStageDefinition | null {
   const match = STAGE_PATTERN.exec(text);
 
@@ -44,6 +48,14 @@ export function resolveCurrentLessonStage(messages: ChatMessage[]): LessonStageD
 
     if (message.role !== "teacher") {
       continue;
+    }
+
+    if (message.lessonStage) {
+      const knownStage = LESSON_STAGES.find((stage) => stage.number === message.lessonStage);
+
+      if (knownStage) {
+        return knownStage;
+      }
     }
 
     const parsedStage = parseLessonStage(message.text);

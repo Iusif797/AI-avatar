@@ -19,7 +19,12 @@ const config: Config = {
           '"Segoe UI"',
           ...defaultTheme.fontFamily.sans
         ],
-        display: ["ui-serif", "Georgia", "Cambria", '"Times New Roman"', ...defaultTheme.fontFamily.serif]
+        display: [
+          "-apple-system",
+          "BlinkMacSystemFont",
+          '"Segoe UI"',
+          ...defaultTheme.fontFamily.sans
+        ]
       },
       boxShadow: {
         soft: "0 22px 70px rgba(18, 18, 18, 0.12)"

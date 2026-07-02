@@ -1,5 +1,7 @@
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { buildAvatarTeacherSystemPrompt, buildFallbackTeacherReply } from "@/lib/prompts/avatar-teacher";
-import type { TeacherChatRequest, TeacherChatResponse } from "@/types/teacher";
+import { parseTeacherResponse } from "@/lib/teacher-response";
+import type { TeacherChatRequest, TeacherChatResponse, TeacherSource } from "@/types/teacher";
 
 type OpenAIMessage = {
   role: "system" | "user" | "assistant";
@@ -21,8 +23,22 @@ type OpenAIResponseBody = {
   output?: OpenAIResponseItem[];
 };
 
-const LLM_TIMEOUT_MS = 25_000;
+type ChatCompletionsBody = {
+  choices?: Array<{ message?: { content?: string } }>;
+};
+
+type GeminiBody = {
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+};
+
+const LLM_TIMEOUT_MS = 12_000;
+const HISTORY_CONTEXT_LENGTH = 8;
 const GEMINI_MODEL = "gemini-2.5-flash";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+const OPENROUTER_FALLBACK_MODELS = [
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "google/gemma-3-27b-it:free"
+];
 
 function collectOutputText(body: OpenAIResponseBody) {
   return (
@@ -35,124 +51,142 @@ function collectOutputText(body: OpenAIResponseBody) {
   );
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
+function buildTeacherResult(
+  rawReply: string,
+  source: Exclude<TeacherSource, "fallback">
+): TeacherChatResponse {
+  const parsed = parseTeacherResponse(rawReply);
 
+  return {
+    reply: parsed.reply,
+    lessonStage: parsed.lessonStage,
+    correction: parsed.correction,
+    suggestedPractice: parsed.suggestedPractice,
+    source
+  };
+}
+
+async function requestReply(
+  source: Exclude<TeacherSource, "fallback">,
+  url: string,
+  init: RequestInit,
+  extractReply: (body: unknown) => string | undefined
+): Promise<TeacherChatResponse | null> {
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
+    const response = await fetchWithTimeout(url, init, LLM_TIMEOUT_MS);
+
+    if (!response.ok) {
+      console.error(`[teacher] ${source} returned ${response.status}`);
+      return null;
+    }
+
+    const reply = extractReply(await response.json())?.trim();
+
+    if (!reply) {
+      console.error(`[teacher] ${source} returned an empty reply`);
+      return null;
+    }
+
+    return buildTeacherResult(reply, source);
+  } catch (cause) {
+    console.error(`[teacher] ${source} request failed`, cause);
+    return null;
   }
 }
 
 export async function askAvatarTeacher(request: TeacherChatRequest): Promise<TeacherChatResponse> {
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const groqKey = process.env.GROQ_API_KEY;
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
-  const openAIKey = process.env.OPENAI_API_KEY;
-
   const systemPrompt = buildAvatarTeacherSystemPrompt(
     request.profile.language,
     request.profile.level,
     request.profile.goal
   );
+  const historyTail = request.history.slice(-HISTORY_CONTEXT_LENGTH);
 
-  const messages: OpenAIMessage[] = [
+  const chatMessages: OpenAIMessage[] = [
     { role: "system", content: systemPrompt },
-    ...request.history.slice(-8).map<OpenAIMessage>((message) => ({
+    ...historyTail.map<OpenAIMessage>((message) => ({
       role: message.role === "teacher" ? "assistant" : "user",
       content: message.text
     })),
     { role: "user", content: request.userMessage }
   ];
 
+  const geminiKey = process.env.GEMINI_API_KEY;
+
   if (geminiKey) {
-    try {
-      const geminiMessages = [
-        {
-          role: "user",
-          parts: [{ text: systemPrompt }]
+    const firstUserIndex = historyTail.findIndex((message) => message.role === "user");
+    const geminiHistory = firstUserIndex === -1 ? [] : historyTail.slice(firstUserIndex);
+
+    const result = await requestReply(
+      "gemini",
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": geminiKey
         },
-        ...request.history.slice(-8).map((message) => ({
-          role: message.role === "teacher" ? "model" : "user",
-          parts: [{ text: message.text }]
-        })),
-        {
-          role: "user",
-          parts: [{ text: request.userMessage }]
-        }
-      ];
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [
+            ...geminiHistory.map((message) => ({
+              role: message.role === "teacher" ? "model" : "user",
+              parts: [{ text: message.text }]
+            })),
+            { role: "user", parts: [{ text: request.userMessage }] }
+          ],
+          generationConfig: { responseMimeType: "application/json" }
+        })
+      },
+      (body) => (body as GeminiBody).candidates?.[0]?.content?.parts?.[0]?.text
+    );
 
-      const response = await fetchWithTimeout(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": geminiKey
-          },
-          body: JSON.stringify({
-            contents: geminiMessages
-          })
-        }
-      );
-
-      if (response.ok) {
-        const body = await response.json();
-        const reply = body.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (reply) {
-          return {
-            reply,
-            source: "openai"
-          };
-        }
-      }
-    } catch {}
+    if (result) {
+      return result;
+    }
   }
 
+  const groqKey = process.env.GROQ_API_KEY;
+
   if (groqKey) {
-    try {
-      const response = await fetchWithTimeout("https://api.groq.com/openai/v1/chat/completions", {
+    const result = await requestReply(
+      "groq",
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
         method: "POST",
         headers: {
           Authorization: `Bearer ${groqKey}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages
+          model: GROQ_MODEL,
+          messages: chatMessages,
+          response_format: { type: "json_object" }
         })
-      });
+      },
+      (body) => (body as ChatCompletionsBody).choices?.[0]?.message?.content
+    );
 
-      if (response.ok) {
-        const body = await response.json();
-        const reply = body.choices?.[0]?.message?.content;
-        if (reply) {
-          return {
-            reply,
-            source: "openai"
-          };
-        }
-      }
-    } catch {}
+    if (result) {
+      return result;
+    }
   }
+
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
 
   if (openRouterKey) {
     const siteUrl = process.env.VERCEL_URL
       ? `https://${process.env.VERCEL_URL}`
       : "http://localhost:3000";
-
-    const models = [
-      process.env.OPENROUTER_MODEL,
-      "google/gemma-4-31b-it:free",
-      "google/gemma-4-26b-a4b-it:free",
-      "nvidia/nemotron-3-super-120b-a12b:free"
-    ].filter(Boolean) as string[];
+    const models = [process.env.OPENROUTER_MODEL, ...OPENROUTER_FALLBACK_MODELS].filter(
+      (model): model is string => Boolean(model)
+    );
 
     for (const model of models) {
-      try {
-        const response = await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions", {
+      const result = await requestReply(
+        "openrouter",
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
           method: "POST",
           headers: {
             Authorization: `Bearer ${openRouterKey}`,
@@ -160,25 +194,24 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
             "HTTP-Referer": siteUrl,
             "X-Title": "AI Language Tutor"
           },
-          body: JSON.stringify({ model, messages })
-        });
+          body: JSON.stringify({ model, messages: chatMessages })
+        },
+        (body) => (body as ChatCompletionsBody).choices?.[0]?.message?.content
+      );
 
-        if (response.ok) {
-          const body = await response.json();
-          const reply = body.choices?.[0]?.message?.content;
-          if (reply) {
-            return { reply, source: "openai" as const };
-          }
-        }
-      } catch {
-        continue;
+      if (result) {
+        return result;
       }
     }
   }
 
+  const openAIKey = process.env.OPENAI_API_KEY;
+
   if (openAIKey) {
-    try {
-      const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
+    const result = await requestReply(
+      "openai",
+      "https://api.openai.com/v1/responses",
+      {
         method: "POST",
         headers: {
           Authorization: `Bearer ${openAIKey}`,
@@ -186,21 +219,15 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
         },
         body: JSON.stringify({
           model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-          input: messages
+          input: chatMessages
         })
-      });
+      },
+      (body) => collectOutputText(body as OpenAIResponseBody)
+    );
 
-      if (response.ok) {
-        const body = (await response.json()) as OpenAIResponseBody;
-        const reply = collectOutputText(body);
-        if (reply) {
-          return {
-            reply,
-            source: "openai"
-          };
-        }
-      }
-    } catch {}
+    if (result) {
+      return result;
+    }
   }
 
   return {

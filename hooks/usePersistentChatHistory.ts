@@ -13,12 +13,14 @@ type UsePersistentChatHistoryOptions = {
   language: TargetLanguage;
   level: LearnerLevel;
   initialMessages: ChatMessage[];
+  enabled?: boolean;
 };
 
 export function usePersistentChatHistory({
   language,
   level,
-  initialMessages
+  initialMessages,
+  enabled = true
 }: UsePersistentChatHistoryOptions) {
   const sessionKey = buildChatSessionKey(language, level);
   const initialMessagesRef = useRef(initialMessages);
@@ -29,6 +31,10 @@ export function usePersistentChatHistory({
   const [isHistoryReady, setIsHistoryReady] = useState(false);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
     let isCancelled = false;
     setIsHistoryReady(false);
     loadedSessionKeyRef.current = null;
@@ -53,7 +59,7 @@ export function usePersistentChatHistory({
     return () => {
       isCancelled = true;
     };
-  }, [sessionKey, language, level]);
+  }, [enabled, sessionKey, language, level]);
 
   useEffect(() => {
     if (!isHistoryReady || loadedSessionKeyRef.current !== sessionKey) {

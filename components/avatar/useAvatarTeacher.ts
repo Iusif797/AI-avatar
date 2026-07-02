@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePersistentChatHistory } from "@/hooks/usePersistentChatHistory";
-import { resolveCurrentLessonStage } from "@/lib/lesson-progress";
+import { resolveCurrentLessonStage, stripStageLabel } from "@/lib/lesson-progress";
 import { toSpeechSegments } from "@/lib/speech";
 import type {
   ChatMessage,
@@ -16,6 +16,18 @@ type AvatarSpeechAdapter = {
   speak: (text: string) => Promise<boolean>;
   repeat: (text: string) => Promise<boolean>;
 };
+
+type UseAvatarTeacherOptions = {
+  autoSpeakOnReply?: boolean;
+  historyEnabled?: boolean;
+};
+
+type FailedTeacherRequest = {
+  userMessage: string;
+  historyTail: ChatMessage[];
+};
+
+const HISTORY_TAIL_LENGTH = 12;
 
 function createId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -63,11 +75,18 @@ function speakSegment(text: string, lang: string): Promise<void> {
 const initialTeacherMessage: ChatMessage = {
   id: "welcome",
   role: "teacher",
+  lessonStage: 1,
   text:
-    "[Этап 1: Разминка] Привет! Я твой AI-учитель. Скажи, что хочешь потренировать сегодня, и я поведу урок голосом, короткими шагами и с мягкими исправлениями."
+    "Привет! Я твоя AI-учительница. Расскажи, что хочешь потренировать сегодня — начнём с простого и пойдём в твоём темпе."
 };
 
-export function useAvatarTeacher(profile: TeacherProfile, avatarSpeech?: AvatarSpeechAdapter) {
+export function useAvatarTeacher(
+  profile: TeacherProfile,
+  avatarSpeech?: AvatarSpeechAdapter,
+  options?: UseAvatarTeacherOptions
+) {
+  const autoSpeakOnReply = options?.autoSpeakOnReply ?? false;
+  const historyEnabled = options?.historyEnabled ?? true;
   const {
     messages,
     setMessages,
@@ -78,21 +97,45 @@ export function useAvatarTeacher(profile: TeacherProfile, avatarSpeech?: AvatarS
   } = usePersistentChatHistory({
     language: profile.language,
     level: profile.level,
-    initialMessages: [initialTeacherMessage]
+    initialMessages: [initialTeacherMessage],
+    enabled: historyEnabled
   });
   const [status, setStatus] = useState<TeacherStatus>("idle");
+  const [errorNotice, setErrorNotice] = useState("");
   const speechIdRef = useRef(0);
+  const messagesRef = useRef<ChatMessage[]>(messages);
+  const failedRequestRef = useRef<FailedTeacherRequest | null>(null);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    window.speechSynthesis?.getVoices();
+  }, []);
+
+  const appendMessage = useCallback(
+    (entry: ChatMessage) => {
+      setMessages((previous) => {
+        const next = [...previous, entry];
+        messagesRef.current = next;
+        return next;
+      });
+    },
+    [setMessages]
+  );
 
   const currentLessonStage = useMemo(() => resolveCurrentLessonStage(messages), [messages]);
 
-  const lastTeacherText = useMemo(
-    () =>
+  const lastTeacherText = useMemo(() => {
+    const rawText =
       [...messages]
         .reverse()
         .find((message) => message.role === "teacher")
-        ?.text.trim() ?? "",
-    [messages]
-  );
+        ?.text.trim() ?? "";
+
+    return stripStageLabel(rawText);
+  }, [messages]);
 
   const speakWithBrowser = useCallback(async (text: string) => {
     const speechId = speechIdRef.current + 1;
@@ -137,6 +180,8 @@ export function useAvatarTeacher(profile: TeacherProfile, avatarSpeech?: AvatarS
   const speak = useCallback(
     async (text: string) => {
       if (avatarSpeech?.isAvailable) {
+        window.speechSynthesis?.cancel();
+
         const speechId = speechIdRef.current + 1;
         speechIdRef.current = speechId;
         setStatus("speaking");
@@ -156,19 +201,8 @@ export function useAvatarTeacher(profile: TeacherProfile, avatarSpeech?: AvatarS
     [avatarSpeech, speakWithBrowser]
   );
 
-  const sendMessage = useCallback(
-    async (userMessage: string) => {
-      const userEntry: ChatMessage = {
-        id: createId(),
-        role: "user",
-        text: userMessage
-      };
-
-      const nextHistory = [...messages, userEntry];
-      setMessages(nextHistory);
-      setLastFeedback("");
-      setStatus("thinking");
-
+  const requestTeacherReply = useCallback(
+    async (userMessage: string, historyTail: ChatMessage[]) => {
       try {
         const response = await fetch("/api/teacher/chat", {
           method: "POST",
@@ -177,45 +211,98 @@ export function useAvatarTeacher(profile: TeacherProfile, avatarSpeech?: AvatarS
           },
           body: JSON.stringify({
             profile,
-            history: messages,
+            history: historyTail,
             userMessage
           })
         });
 
         if (response.status === 429) {
-          setLastFeedback("Слишком много запросов. Подожди немного и попробуй снова.");
+          failedRequestRef.current = { userMessage, historyTail };
+          setErrorNotice("Слишком много запросов. Подожди немного и нажми «Повторить».");
           setStatus("error");
           return;
         }
 
         if (!response.ok) {
-          throw new Error("Teacher API failed");
+          throw new Error(`Teacher API returned ${response.status}`);
         }
 
         const data = (await response.json()) as TeacherChatResponse;
         const teacherEntry: ChatMessage = {
           id: createId(),
           role: "teacher",
-          text: data.reply
+          text: data.reply,
+          lessonStage: data.lessonStage
         };
 
-        setMessages([...nextHistory, teacherEntry]);
-        setLastFeedback(data.correction ?? (data.source === "fallback" ? "AI-ключ не подключён. Добавь ключ провайдера в .env.local." : ""));
-        await speak(data.reply);
+        failedRequestRef.current = null;
+        appendMessage(teacherEntry);
+
+        const feedbackParts = [
+          data.correction ?? "",
+          data.suggestedPractice ? `Практика: ${data.suggestedPractice}` : ""
+        ].filter(Boolean);
+
+        setLastFeedback(
+          feedbackParts.join(" — ") ||
+            (data.source === "fallback" ? "Демо-режим: AI-ключ не подключён, ответ учебный." : "")
+        );
+
+        if (autoSpeakOnReply) {
+          await speak(data.reply);
+          return;
+        }
+
+        setStatus("idle");
       } catch {
-        const teacherEntry: ChatMessage = {
-          id: createId(),
-          role: "teacher",
-          text:
-            "Я не смогла получить ответ от сервера. Проверь локальный запуск, а потом продолжим урок."
-        };
-
-        setMessages([...nextHistory, teacherEntry]);
+        failedRequestRef.current = { userMessage, historyTail };
+        setErrorNotice("Не удалось получить ответ от сервера. Проверь соединение и нажми «Повторить».");
         setStatus("error");
       }
     },
-    [messages, profile, speak]
+    [appendMessage, autoSpeakOnReply, profile, setLastFeedback, speak]
   );
+
+  const sendMessage = useCallback(
+    async (userMessage: string) => {
+      const historyTail = messagesRef.current.slice(-HISTORY_TAIL_LENGTH);
+
+      appendMessage({
+        id: createId(),
+        role: "user",
+        text: userMessage
+      });
+      setLastFeedback("");
+      setErrorNotice("");
+      setStatus("thinking");
+
+      await requestTeacherReply(userMessage, historyTail);
+    },
+    [appendMessage, requestTeacherReply, setLastFeedback]
+  );
+
+  const retryLastMessage = useCallback(async () => {
+    const failedRequest = failedRequestRef.current;
+
+    if (!failedRequest || status === "thinking" || status === "speaking") {
+      return;
+    }
+
+    setErrorNotice("");
+    setStatus("thinking");
+    await requestTeacherReply(failedRequest.userMessage, failedRequest.historyTail);
+  }, [requestTeacherReply, status]);
+
+  const resetLesson = useCallback(() => {
+    speechIdRef.current += 1;
+    window.speechSynthesis?.cancel();
+    failedRequestRef.current = null;
+    messagesRef.current = [initialTeacherMessage];
+    setMessages([initialTeacherMessage]);
+    setLastFeedback("");
+    setErrorNotice("");
+    setStatus("idle");
+  }, [setLastFeedback, setMessages]);
 
   const repeatLastTeacherMessage = useCallback(async () => {
     if (!lastTeacherText || status === "thinking" || status === "speaking") {
@@ -244,10 +331,14 @@ export function useAvatarTeacher(profile: TeacherProfile, avatarSpeech?: AvatarS
     messages,
     status,
     lastFeedback,
+    errorNotice,
     currentLessonStage,
     isHistoryReady,
     sessionKey,
+    lastTeacherText,
     sendMessage,
+    retryLastMessage,
+    resetLesson,
     repeatLastTeacherMessage
   };
 }

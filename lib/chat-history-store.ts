@@ -22,6 +22,15 @@ function isChatMessage(value: unknown): value is ChatMessage {
 
   const message = value as Record<string, unknown>;
 
+  const lessonStage = message.lessonStage;
+
+  if (
+    lessonStage !== undefined &&
+    (typeof lessonStage !== "number" || !Number.isInteger(lessonStage) || lessonStage < 1 || lessonStage > 5)
+  ) {
+    return false;
+  }
+
   return (
     typeof message.id === "string" &&
     (message.role === "user" || message.role === "teacher") &&

@@ -48,6 +48,7 @@ function readStoredProfile(): StoredProfile | null {
 export function usePersistentLearnerProfile() {
   const [language, setLanguage] = useState<TargetLanguage>("he");
   const [level, setLevel] = useState<LearnerLevel>("A1");
+  const [isProfileReady, setIsProfileReady] = useState(false);
 
   useEffect(() => {
     const stored = readStoredProfile();
@@ -56,16 +57,23 @@ export function usePersistentLearnerProfile() {
       setLanguage(stored.language);
       setLevel(stored.level);
     }
+
+    setIsProfileReady(true);
   }, []);
 
   useEffect(() => {
+    if (!isProfileReady) {
+      return;
+    }
+
     window.localStorage.setItem(storageKey, JSON.stringify({ language, level }));
-  }, [language, level]);
+  }, [isProfileReady, language, level]);
 
   return {
     language,
     setLanguage,
     level,
-    setLevel
+    setLevel,
+    isProfileReady
   };
 }

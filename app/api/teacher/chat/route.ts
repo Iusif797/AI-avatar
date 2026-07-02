@@ -10,7 +10,10 @@ const chatMessageSchema = z.object({
   id: z.string().max(128),
   role: z.enum(["user", "teacher"]),
   text: z.string().max(4000),
-  translation: z.string().max(4000).optional()
+  translation: z.string().max(4000).optional(),
+  lessonStage: z
+    .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+    .optional()
 });
 
 const teacherChatSchema = z.object({
@@ -19,7 +22,7 @@ const teacherChatSchema = z.object({
     level: z.enum(["A1", "A2", "B1", "B2"]),
     goal: z.string().min(1).max(500)
   }),
-  history: z.array(chatMessageSchema).max(20),
+  history: z.array(chatMessageSchema).max(40),
   userMessage: z.string().min(1).max(2000)
 });
 

@@ -7,6 +7,7 @@ export type ChatMessage = {
   role: "user" | "teacher";
   text: string;
   translation?: string;
+  lessonStage?: 1 | 2 | 3 | 4 | 5;
 };
 
 export type TeacherProfile = {
@@ -21,9 +22,12 @@ export type TeacherChatRequest = {
   userMessage: string;
 };
 
+export type TeacherSource = "gemini" | "groq" | "openrouter" | "openai" | "fallback";
+
 export type TeacherChatResponse = {
   reply: string;
+  lessonStage?: 1 | 2 | 3 | 4 | 5;
   correction?: string;
   suggestedPractice?: string;
-  source: "openai" | "fallback";
+  source: TeacherSource;
 };

@@ -2,6 +2,7 @@ import { AgentEventsEnum, type LiveAvatarSession } from "@heygen/liveavatar-web-
 import { sanitizeForSpeech } from "@/lib/speech";
 
 const SPEAK_TIMEOUT_MS = 120000;
+const SPEAK_START_TIMEOUT_MS = 15000;
 
 function waitForAvatarSpeechEnd(session: LiveAvatarSession): Promise<boolean> {
   return new Promise((resolve) => {
@@ -25,7 +26,7 @@ function waitForAvatarSpeechEnd(session: LiveAvatarSession): Promise<boolean> {
     };
 
     const timeoutId = window.setTimeout(() => finish(false), SPEAK_TIMEOUT_MS);
-    const startTimeoutId = window.setTimeout(() => finish(false), SPEAK_TIMEOUT_MS);
+    const startTimeoutId = window.setTimeout(() => finish(false), SPEAK_START_TIMEOUT_MS);
 
     session.on(AgentEventsEnum.AVATAR_SPEAK_ENDED, handleEnded);
     session.on(AgentEventsEnum.AVATAR_SPEAK_STARTED, handleStarted);

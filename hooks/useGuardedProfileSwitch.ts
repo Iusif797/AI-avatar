@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import type { ChatMessage, LearnerLevel, TargetLanguage } from "@/types/teacher";
 
-const languageLabels: Record<TargetLanguage, string> = {
-  he: "Иврит",
-  en: "English"
-};
+export type PendingProfileSwitch =
+  | { kind: "language"; value: TargetLanguage }
+  | { kind: "level"; value: LearnerLevel };
 
 function hasUserMessages(messages: ChatMessage[]): boolean {
   return messages.some((message) => message.role === "user");
@@ -27,22 +26,20 @@ export function useGuardedProfileSwitch({
   setLanguage,
   setLevel
 }: UseGuardedProfileSwitchOptions) {
+  const [pendingSwitch, setPendingSwitch] = useState<PendingProfileSwitch | null>(null);
+
   const requestLanguage = useCallback(
     (nextLanguage: TargetLanguage) => {
       if (nextLanguage === language) {
         return;
       }
 
-      if (
-        hasUserMessages(messages) &&
-        !window.confirm(
-          `Смена языка откроет сохранённую сессию для «${languageLabels[nextLanguage]}». Текущий диалог останется в истории. Продолжить?`
-        )
-      ) {
+      if (!hasUserMessages(messages)) {
+        setLanguage(nextLanguage);
         return;
       }
 
-      setLanguage(nextLanguage);
+      setPendingSwitch({ kind: "language", value: nextLanguage });
     },
     [language, messages, setLanguage]
   );
@@ -53,22 +50,39 @@ export function useGuardedProfileSwitch({
         return;
       }
 
-      if (
-        hasUserMessages(messages) &&
-        !window.confirm(
-          `Смена уровня откроет сохранённую сессию для «${nextLevel}». Текущий диалог останется в истории. Продолжить?`
-        )
-      ) {
+      if (!hasUserMessages(messages)) {
+        setLevel(nextLevel);
         return;
       }
 
-      setLevel(nextLevel);
+      setPendingSwitch({ kind: "level", value: nextLevel });
     },
     [level, messages, setLevel]
   );
 
+  const confirmPendingSwitch = useCallback(() => {
+    if (!pendingSwitch) {
+      return;
+    }
+
+    if (pendingSwitch.kind === "language") {
+      setLanguage(pendingSwitch.value);
+    } else {
+      setLevel(pendingSwitch.value);
+    }
+
+    setPendingSwitch(null);
+  }, [pendingSwitch, setLanguage, setLevel]);
+
+  const cancelPendingSwitch = useCallback(() => {
+    setPendingSwitch(null);
+  }, []);
+
   return {
+    pendingSwitch,
     requestLanguage,
-    requestLevel
+    requestLevel,
+    confirmPendingSwitch,
+    cancelPendingSwitch
   };
 }

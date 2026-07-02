@@ -31,7 +31,6 @@ export function useLiveAvatarSession(language: TargetLanguage, isCallModeActive:
   const [connectNonce, setConnectNonce] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const sessionRef = useRef<LiveAvatarSession | null>(null);
-  const connectGenerationRef = useRef(0);
 
   useEffect(() => {
     if (!isCallModeActive) {
@@ -39,21 +38,15 @@ export function useLiveAvatarSession(language: TargetLanguage, isCallModeActive:
       setConnectionLabel("режим чата");
       setConnectionHint(null);
       setIsStreamReady(false);
-      sessionRef.current = null;
       return;
     }
 
-    const generation = connectGenerationRef.current + 1;
-    connectGenerationRef.current = generation;
+    let isCancelled = false;
     let session: LiveAvatarSession | null = null;
     let keepAliveTimer: number | null = null;
 
-    function isCurrentConnection() {
-      return connectGenerationRef.current === generation;
-    }
-
     function setFallbackState(message: string) {
-      if (!isCurrentConnection()) {
+      if (isCancelled) {
         return;
       }
 
@@ -78,7 +71,7 @@ export function useLiveAvatarSession(language: TargetLanguage, isCallModeActive:
 
         const data = (await response.json()) as AvatarTokenResponse & { error?: string };
 
-        if (!isCurrentConnection()) {
+        if (isCancelled) {
           return;
         }
 
@@ -98,7 +91,7 @@ export function useLiveAvatarSession(language: TargetLanguage, isCallModeActive:
         sessionRef.current = session;
 
         session.on(SessionEvent.SESSION_STREAM_READY, () => {
-          if (!isCurrentConnection()) {
+          if (isCancelled) {
             return;
           }
 
@@ -116,8 +109,7 @@ export function useLiveAvatarSession(language: TargetLanguage, isCallModeActive:
 
         await session.start();
 
-        if (!isCurrentConnection()) {
-          await session.stop();
+        if (isCancelled) {
           return;
         }
 
@@ -131,6 +123,10 @@ export function useLiveAvatarSession(language: TargetLanguage, isCallModeActive:
           }
         }, KEEP_ALIVE_INTERVAL_MS);
       } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
         const errorMessage =
           error instanceof Error && error.message
             ? error.message
@@ -142,12 +138,17 @@ export function useLiveAvatarSession(language: TargetLanguage, isCallModeActive:
     void connectLiveAvatar();
 
     return () => {
+      isCancelled = true;
+
       if (keepAliveTimer !== null) {
         window.clearInterval(keepAliveTimer);
       }
 
-      if (connectGenerationRef.current === generation) {
-        void session?.stop();
+      if (session) {
+        void session.stop().catch(() => undefined);
+      }
+
+      if (sessionRef.current === session) {
         sessionRef.current = null;
       }
     };

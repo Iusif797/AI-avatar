@@ -4,6 +4,15 @@ type RateLimitBucket = {
 };
 
 const buckets = new Map<string, RateLimitBucket>();
+const SWEEP_THRESHOLD = 1000;
+
+function sweepExpiredBuckets(now: number) {
+  for (const [key, bucket] of buckets) {
+    if (now >= bucket.resetAt) {
+      buckets.delete(key);
+    }
+  }
+}
 
 export type RateLimitConfig = {
   limit: number;
@@ -18,6 +27,11 @@ export type RateLimitResult = {
 
 export function checkRateLimit(key: string, config: RateLimitConfig): RateLimitResult {
   const now = Date.now();
+
+  if (buckets.size >= SWEEP_THRESHOLD) {
+    sweepExpiredBuckets(now);
+  }
+
   const bucket = buckets.get(key);
 
   if (!bucket || now >= bucket.resetAt) {

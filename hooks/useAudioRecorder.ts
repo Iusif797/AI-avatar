@@ -8,22 +8,41 @@ type UseAudioRecorderOptions = {
   onAudioReady: (audio: Blob) => Promise<void>;
 };
 
+const MAX_RECORDING_MS = 60_000;
+
 export function useAudioRecorder({ onAudioReady }: UseAudioRecorderOptions) {
   const [state, setState] = useState<AudioRecorderState>("idle");
   const [error, setError] = useState<string>("");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const autoStopTimerRef = useRef<number | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
+
+  const clearAutoStopTimer = useCallback(() => {
+    if (autoStopTimerRef.current !== null) {
+      window.clearTimeout(autoStopTimerRef.current);
+      autoStopTimerRef.current = null;
+    }
+  }, []);
 
   const startRecording = useCallback(async () => {
     setError("");
 
-    if (!navigator.mediaDevices?.getUserMedia) {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setState("error");
-      setError("Браузер не дал доступ к записи аудио.");
+      setError("Браузер не поддерживает запись аудио.");
       return;
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    let stream: MediaStream;
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setState("error");
+      setError("Нет доступа к микрофону. Разреши запись в настройках браузера.");
+      return;
+    }
+
     const recorder = new MediaRecorder(stream);
 
     chunksRef.current = [];
@@ -36,21 +55,32 @@ export function useAudioRecorder({ onAudioReady }: UseAudioRecorderOptions) {
     };
 
     recorder.onstop = () => {
+      clearAutoStopTimer();
       const audio = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
       stream.getTracks().forEach((track) => track.stop());
 
       setState("transcribing");
       void onAudioReady(audio)
         .then(() => setState("idle"))
-        .catch(() => {
+        .catch((cause: unknown) => {
           setState("error");
-          setError("Не получилось распознать голос.");
+          setError(
+            cause instanceof Error && cause.message
+              ? cause.message
+              : "Не получилось распознать голос."
+          );
         });
     };
 
     recorder.start();
     setState("recording");
-  }, [onAudioReady]);
+
+    autoStopTimerRef.current = window.setTimeout(() => {
+      if (recorder.state === "recording") {
+        recorder.stop();
+      }
+    }, MAX_RECORDING_MS);
+  }, [clearAutoStopTimer, onAudioReady]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current?.state === "recording") {

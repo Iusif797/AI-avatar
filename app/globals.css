@@ -19,9 +19,38 @@ body {
 
 body {
   margin: 0;
+  background:
+    linear-gradient(180deg, #fffaf1 0%, #f6efe4 46%, #ece3d5 100%);
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", ui-sans-serif, system-ui,
     sans-serif;
+}
+
+::selection {
+  background: rgba(105, 87, 168, 0.18);
+}
+
+* {
+  scrollbar-color: rgba(18, 18, 18, 0.24) transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(18, 18, 18, 0.18);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(18, 18, 18, 0.28);
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 
 button,
@@ -41,6 +70,16 @@ textarea:focus-visible,
 select:focus-visible {
   outline: 3px solid rgba(105, 87, 168, 0.35);
   outline-offset: 3px;
+}
+
+.lesson-shell {
+  width: calc(100% - 2rem);
+}
+
+@media (min-width: 768px) {
+  .lesson-shell {
+    width: 100%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

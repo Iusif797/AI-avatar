@@ -8,6 +8,7 @@ import {
   MicOff,
   Phone,
   PhoneOff,
+  RotateCcw,
   Send,
   Sparkles,
   Volume2
@@ -15,11 +16,13 @@ import {
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AvatarStage } from "@/components/avatar/AvatarStage";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { LessonProgressBar } from "@/components/avatar/LessonProgressBar";
 import { useAvatarTeacher } from "@/components/avatar/useAvatarTeacher";
 import { useLiveAvatarSession } from "@/components/avatar/useLiveAvatarSession";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useGuardedProfileSwitch } from "@/hooks/useGuardedProfileSwitch";
+import { stripStageLabel } from "@/lib/lesson-progress";
 import { usePersistentLearnerProfile } from "@/hooks/usePersistentLearnerProfile";
 import type { LearnerLevel, TargetLanguage } from "@/types/teacher";
 
@@ -28,12 +31,18 @@ const goals: Record<TargetLanguage, string> = {
   en: "уверенно говорить на английском в работе и поездках"
 };
 
+const languageLabels: Record<TargetLanguage, string> = {
+  he: "Иврит",
+  en: "English"
+};
+
 type InteractionMode = "text" | "voice";
 
 export function AvatarTeacherSession() {
-  const { language, level, setLanguage, setLevel } = usePersistentLearnerProfile();
+  const { language, level, setLanguage, setLevel, isProfileReady } = usePersistentLearnerProfile();
   const [text, setText] = useState("");
   const [mode, setMode] = useState<InteractionMode>("text");
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
 
   const profile = useMemo(
     () => ({
@@ -60,14 +69,27 @@ export function AvatarTeacherSession() {
     messages,
     status,
     lastFeedback,
+    errorNotice,
     currentLessonStage,
     isHistoryReady,
     sessionKey,
+    lastTeacherText,
     sendMessage,
+    retryLastMessage,
+    resetLesson,
     repeatLastTeacherMessage
-  } = useAvatarTeacher(profile, avatarSpeech);
+  } = useAvatarTeacher(profile, avatarSpeech, {
+    autoSpeakOnReply: isCallMode,
+    historyEnabled: isProfileReady
+  });
 
-  const { requestLanguage, requestLevel } = useGuardedProfileSwitch({
+  const {
+    pendingSwitch,
+    requestLanguage,
+    requestLevel,
+    confirmPendingSwitch,
+    cancelPendingSwitch
+  } = useGuardedProfileSwitch({
     messages,
     language,
     level,
@@ -94,8 +116,9 @@ export function AvatarTeacherSession() {
 
   const recorder = useAudioRecorder({
     onAudioReady: async (audio) => {
+      const extension = audio.type.includes("mp4") ? "mp4" : audio.type.includes("ogg") ? "ogg" : "webm";
       const formData = new FormData();
-      formData.append("audio", audio, "speech.webm");
+      formData.append("audio", audio, `speech.${extension}`);
 
       const response = await fetch("/api/stt", {
         method: "POST",
@@ -110,9 +133,11 @@ export function AvatarTeacherSession() {
 
       const transcript = data.text?.trim();
 
-      if (transcript) {
-        await sendMessage(transcript);
+      if (!transcript) {
+        throw new Error("Не расслышала речь. Скажи чуть громче и попробуй ещё раз.");
       }
+
+      await sendMessage(transcript);
     }
   });
 
@@ -139,10 +164,12 @@ export function AvatarTeacherSession() {
         : status === "speaking"
           ? "Говорит учитель..."
           : "Нажмите на микрофон";
+  const panelStatusLabel =
+    mode === "voice" ? voiceStatusLabel : `Этап ${currentLessonStage.number}: ${currentLessonStage.title}`;
 
   return (
-    <main className="min-h-screen min-h-[100dvh] overflow-x-hidden bg-[#f7f3eb] text-[#121212] flex flex-col">
-      <header className="border-b border-[#121212]/10 bg-white/80 backdrop-blur-md sticky top-0 z-50">
+    <main className="min-h-screen min-h-[100dvh] overflow-x-hidden bg-[linear-gradient(180deg,#fffaf1_0%,#f6efe4_46%,#ece3d5_100%)] text-[#121212] flex flex-col">
+      <header className="sticky top-0 z-50 border-b border-[#121212]/10 bg-[#fffaf1]/88 shadow-[0_10px_30px_rgba(18,18,18,0.06)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-6 lg:px-8">
           <div className="flex items-center gap-3">
             <Image
@@ -153,14 +180,19 @@ export function AvatarTeacherSession() {
               src="/logo-ai.png"
               width={56}
             />
-            <h1 className="font-display text-lg font-semibold tracking-tight sm:text-2xl">
-              AI Avatar Teacher
-            </h1>
+            <div className="min-w-0">
+              <h1 className="truncate font-display text-lg font-semibold tracking-tight sm:text-2xl">
+                AI Avatar Teacher
+              </h1>
+              <p className="mt-0.5 text-xs font-bold text-[#121212]/48 sm:text-sm">
+                {language === "he" ? "Иврит" : "English"} · {level}
+              </p>
+            </div>
           </div>
-          <div className="flex w-full rounded-full border border-[#121212]/10 bg-white p-0.5 shadow-sm sm:w-auto">
+          <div className="flex w-full overflow-hidden rounded-full border border-[#121212]/10 bg-white/75 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_8px_22px_rgba(18,18,18,0.06)] sm:w-auto">
             <button
-              className={`inline-flex min-h-[44px] flex-1 items-center justify-center rounded-full px-4 py-2 text-xs sm:flex-none sm:text-sm font-bold transition active:scale-95 ${
-                language === "he" ? "bg-[#121212] text-white" : "text-[#121212]/70 hover:text-[#121212]"
+              className={`inline-flex min-h-[42px] min-w-0 flex-1 items-center justify-center rounded-full px-4 py-2 text-xs sm:flex-none sm:px-5 sm:text-sm font-bold transition active:scale-95 ${
+                language === "he" ? "bg-[#121212] text-white shadow-md" : "text-[#121212]/62 hover:text-[#121212]"
               }`}
               type="button"
               onClick={() => requestLanguage("he")}
@@ -168,8 +200,8 @@ export function AvatarTeacherSession() {
               Иврит
             </button>
             <button
-              className={`inline-flex min-h-[44px] flex-1 items-center justify-center rounded-full px-4 py-2 text-xs sm:flex-none sm:text-sm font-bold transition active:scale-95 ${
-                language === "en" ? "bg-[#121212] text-white" : "text-[#121212]/70 hover:text-[#121212]"
+              className={`inline-flex min-h-[42px] min-w-0 flex-1 items-center justify-center rounded-full px-4 py-2 text-xs sm:flex-none sm:px-5 sm:text-sm font-bold transition active:scale-95 ${
+                language === "en" ? "bg-[#121212] text-white shadow-md" : "text-[#121212]/62 hover:text-[#121212]"
               }`}
               type="button"
               onClick={() => requestLanguage("en")}
@@ -180,8 +212,8 @@ export function AvatarTeacherSession() {
         </div>
       </header>
 
-      <section className="mx-auto grid w-full max-w-7xl flex-1 gap-6 p-4 md:h-[calc(100dvh-4.5rem)] md:grid-cols-[380px_1fr] md:p-6 lg:p-8">
-        <div className="flex flex-col gap-4 md:h-full md:overflow-y-auto pr-1">
+      <section className="lesson-shell mx-auto grid max-w-7xl flex-1 gap-5 py-4 md:h-[calc(100dvh-5.25rem)] md:grid-cols-[400px_minmax(0,1fr)] md:p-6 lg:gap-7 lg:p-8">
+        <div className="flex min-w-0 flex-col gap-4 md:h-full md:overflow-y-auto md:pr-1">
           <AvatarStage
             variant={isCallMode ? "call" : "chat"}
             connectionHint={liveAvatar.connectionHint}
@@ -196,13 +228,15 @@ export function AvatarTeacherSession() {
 
           <LessonProgressBar currentStage={currentLessonStage} />
 
-          <div className="flex min-h-[44px] items-center justify-between rounded-lg border border-[#121212]/10 bg-white px-4 py-3 shadow-soft text-sm font-bold text-[#121212]/70">
+          <div className="flex min-h-[64px] items-center justify-between rounded-lg border border-[#121212]/10 bg-white/82 px-4 py-3 text-sm font-bold text-[#121212]/70 shadow-[0_18px_45px_rgba(18,18,18,0.08)] backdrop-blur">
             <span className="flex items-center gap-2">
-              <Languages aria-hidden="true" className="h-4 w-4 text-violet" />
+              <span className="grid h-9 w-9 place-items-center rounded-md bg-violet/10">
+                <Languages aria-hidden="true" className="h-4 w-4 text-violet" />
+              </span>
               Уровень
             </span>
             <select
-              className="min-h-[44px] rounded-md border border-[#121212]/15 bg-[#f7f3eb] px-3 py-2 text-sm font-bold text-[#121212] focus:outline-none"
+              className="min-h-[44px] rounded-md border border-[#121212]/12 bg-[#fffaf1] px-3 py-2 text-sm font-bold text-[#121212] shadow-inner focus:outline-none"
               value={level}
               onChange={(event) => requestLevel(event.target.value as LearnerLevel)}
             >
@@ -214,26 +248,31 @@ export function AvatarTeacherSession() {
           </div>
         </div>
 
-        <div className="flex min-h-[min(72vh,640px)] flex-col overflow-hidden rounded-lg border border-[#121212]/10 bg-white shadow-soft md:min-h-0 md:h-full">
+        <div className="flex min-h-[min(72vh,640px)] min-w-0 flex-col overflow-hidden rounded-lg border border-[#121212]/10 bg-white/88 shadow-[0_28px_80px_rgba(18,18,18,0.12)] backdrop-blur md:min-h-0 md:h-full">
           {sessionNotice ? (
             <div className="border-b border-violet/20 bg-violet/10 px-4 py-2 text-xs font-semibold text-violet">
               {sessionNotice}
             </div>
           ) : null}
 
-          <div className="flex items-center justify-between border-b border-[#121212]/10 px-4 py-3 bg-white">
-            <div className="flex items-center gap-2 font-black">
-              <Bot aria-hidden="true" className="h-5 w-5 text-coral" />
-              {mode === "text" ? "Чат с преподавателем" : "Голосовой урок"}
+          <div className="flex items-center justify-between gap-3 border-b border-[#121212]/10 bg-[linear-gradient(180deg,#ffffff_0%,#fffaf1_100%)] px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3 font-black">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-coral/10">
+                <Bot aria-hidden="true" className="h-5 w-5 text-coral" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate">{mode === "text" ? "Чат с преподавателем" : "Голосовой урок"}</p>
+                <p className="mt-0.5 truncate text-xs font-bold text-[#121212]/45">{panelStatusLabel}</p>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <div className="flex rounded-full border border-[#121212]/10 bg-[#f7f3eb] p-0.5">
+            <div className="flex shrink-0 items-center gap-1.5">
+              <div className="flex rounded-full border border-[#121212]/10 bg-[#f7f3eb] p-1 shadow-inner">
                 <button
                   aria-label="Текстовый режим"
                   aria-pressed={mode === "text"}
                   className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full px-3 transition ${
                     mode === "text"
-                      ? "bg-[#121212] text-white shadow-sm"
+                      ? "bg-[#121212] text-white shadow-md"
                       : "text-[#121212]/50 hover:text-[#121212]"
                   }`}
                   type="button"
@@ -247,7 +286,7 @@ export function AvatarTeacherSession() {
                   aria-pressed={mode === "voice"}
                   className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-full px-3 transition ${
                     mode === "voice"
-                      ? "bg-coral text-white shadow-sm"
+                      ? "bg-coral text-white shadow-md"
                       : "text-[#121212]/50 hover:text-[#121212]"
                   }`}
                   type="button"
@@ -258,27 +297,37 @@ export function AvatarTeacherSession() {
                 </button>
               </div>
               <button
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#121212]/10 text-[#121212]/70 transition active:scale-95 hover:border-coral hover:text-coral hover:bg-[#121212]/5"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#121212]/10 text-[#121212]/70 transition active:scale-95 hover:border-coral hover:text-coral hover:bg-[#121212]/5 disabled:cursor-not-allowed disabled:opacity-40"
                 type="button"
-                aria-label="Повторить последнюю фразу"
+                aria-label="Озвучить последнюю фразу учителя"
+                disabled={!lastTeacherText || isBusy}
                 onClick={repeatLastTeacherMessage}
               >
                 <Volume2 aria-hidden="true" className="h-4 w-4" />
+              </button>
+              <button
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#121212]/10 text-[#121212]/70 transition active:scale-95 hover:border-violet hover:text-violet hover:bg-[#121212]/5 disabled:cursor-not-allowed disabled:opacity-40"
+                type="button"
+                aria-label="Начать новый урок"
+                disabled={isBusy}
+                onClick={() => setIsResetDialogOpen(true)}
+              >
+                <RotateCcw aria-hidden="true" className="h-4 w-4" />
               </button>
             </div>
           </div>
 
           {mode === "text" ? (
             <>
-              <div aria-live="polite" className="flex-1 space-y-3 overflow-y-auto bg-[#fbfaf6] p-4 min-h-[300px]">
+              <div aria-live="polite" className="flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#fffdf8_0%,#f7f0e5_100%)] p-4 min-h-[300px] sm:p-5">
                 {!isHistoryReady ? (
                   <p className="text-sm font-semibold text-[#121212]/45">Загружаю историю чата...</p>
                 ) : null}
                 {messages.map((message) => (
                   <article
-                    className={`max-w-[85%] rounded-lg px-4 py-2.5 shadow-sm lg:max-w-[38rem] ${
+                    className={`max-w-[88%] rounded-lg px-4 py-3 shadow-[0_12px_30px_rgba(18,18,18,0.06)] lg:max-w-[38rem] ${
                       message.role === "teacher"
-                        ? "border border-[#121212]/10 bg-white mr-auto"
+                        ? "border border-[#121212]/10 bg-white/92 mr-auto"
                         : "ml-auto bg-[#121212] text-white"
                     }`}
                     key={message.id}
@@ -286,10 +335,23 @@ export function AvatarTeacherSession() {
                     <p className="text-[10px] font-bold opacity-60 uppercase tracking-wider">
                       {message.role === "teacher" ? "AI-учитель" : "Ученик"}
                     </p>
-                    <p className="mt-0.5 whitespace-pre-wrap text-sm sm:text-base leading-relaxed">{message.text}</p>
+                    <p className="mt-0.5 whitespace-pre-wrap text-sm sm:text-base leading-relaxed">{message.role === "teacher" ? stripStageLabel(message.text) : message.text}</p>
                   </article>
                 ))}
               </div>
+
+              {errorNotice ? (
+                <div className="flex items-center justify-between gap-3 border-t border-coral/20 bg-coral/10 px-4 py-3 text-xs sm:text-sm font-semibold text-[#121212]/80">
+                  <span>{errorNotice}</span>
+                  <button
+                    className="inline-flex min-h-[36px] shrink-0 items-center justify-center rounded-md bg-coral px-3 text-xs font-black text-white transition active:scale-95 hover:bg-[#121212]"
+                    type="button"
+                    onClick={() => void retryLastMessage()}
+                  >
+                    Повторить
+                  </button>
+                </div>
+              ) : null}
 
               {lastFeedback ? (
                 <div className="border-t border-[#121212]/10 bg-mint/10 px-4 py-3 text-xs sm:text-sm font-semibold text-[#121212]/75">
@@ -297,9 +359,9 @@ export function AvatarTeacherSession() {
                 </div>
               ) : null}
 
-              <form className="grid gap-3 border-t border-[#121212]/10 p-4 bg-white" onSubmit={handleSubmit}>
+              <form className="grid gap-3 border-t border-[#121212]/10 bg-white/96 p-4" onSubmit={handleSubmit}>
                 <textarea
-                  className="min-h-16 max-h-32 resize-none rounded-lg border border-[#121212]/15 bg-[#f7f3eb] px-4 py-2.5 text-base leading-relaxed text-[#121212] placeholder:text-[#121212]/45 focus:outline-none"
+                  className="min-h-16 max-h-32 resize-none rounded-lg border border-[#121212]/12 bg-[#fffaf1] px-4 py-3 text-base leading-relaxed text-[#121212] shadow-inner placeholder:text-[#121212]/42 focus:outline-none"
                   placeholder={
                     language === "he"
                       ? "Например: как сказать «я хочу кофе» на иврите?"
@@ -310,7 +372,7 @@ export function AvatarTeacherSession() {
                 />
                 <div className="flex gap-2">
                   <button
-                    className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-md bg-[#121212] px-4 py-2.5 text-sm font-black text-white transition active:scale-[0.98] hover:bg-coral disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
+                    className="inline-flex min-h-[46px] flex-1 items-center justify-center gap-2 rounded-md bg-[#121212] px-4 py-2.5 text-sm font-black text-white shadow-[0_12px_26px_rgba(18,18,18,0.18)] transition active:scale-[0.98] hover:bg-coral disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
                     type="submit"
                     disabled={isBusy}
                   >
@@ -318,7 +380,7 @@ export function AvatarTeacherSession() {
                     Отправить
                   </button>
                   <button
-                    className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-[#121212]/15 px-4 py-2.5 text-sm font-bold text-[#121212] transition active:scale-[0.98] hover:border-violet hover:text-violet bg-white"
+                    className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-md border border-[#121212]/15 bg-white px-4 py-2.5 text-sm font-bold text-[#121212] shadow-sm transition active:scale-[0.98] hover:border-violet hover:text-violet"
                     type="button"
                     onClick={() =>
                       setText(language === "he" ? "Научи меня поздороваться" : "Teach me a useful phrase")
@@ -334,7 +396,7 @@ export function AvatarTeacherSession() {
               </form>
             </>
           ) : (
-            <div className="flex min-h-[420px] flex-1 flex-col items-center justify-between bg-gradient-to-b from-[#fbfaf6] to-[#f0ece2] p-6">
+            <div className="flex min-h-[420px] flex-1 flex-col items-center justify-between bg-[linear-gradient(180deg,#fffdf8_0%,#efe7da_100%)] p-6">
               <div className="flex flex-1 flex-col items-center justify-center gap-6 w-full">
                 <p
                   aria-live="polite"
@@ -383,6 +445,19 @@ export function AvatarTeacherSession() {
                 {recorder.error ? (
                   <p className="text-xs font-semibold text-coral">{recorder.error}</p>
                 ) : null}
+
+                {errorNotice ? (
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-semibold text-coral">{errorNotice}</p>
+                    <button
+                      className="inline-flex min-h-[32px] items-center justify-center rounded-md bg-coral px-3 text-xs font-black text-white transition active:scale-95 hover:bg-[#121212]"
+                      type="button"
+                      onClick={() => void retryLastMessage()}
+                    >
+                      Повторить
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
               <div className="w-full max-w-md space-y-2 max-h-[200px] overflow-y-auto rounded-lg border border-[#121212]/10 bg-white/80 backdrop-blur p-3">
@@ -395,7 +470,7 @@ export function AvatarTeacherSession() {
                     }`}
                     key={message.id}
                   >
-                    <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
+                    <p className="whitespace-pre-wrap leading-relaxed">{message.role === "teacher" ? stripStageLabel(message.text) : message.text}</p>
                   </div>
                 ))}
               </div>
@@ -412,6 +487,31 @@ export function AvatarTeacherSession() {
           )}
         </div>
       </section>
+
+      {pendingSwitch ? (
+        <ConfirmDialog
+          confirmLabel="Продолжить"
+          description={`Откроется сохранённая сессия для «${
+            pendingSwitch.kind === "language" ? languageLabels[pendingSwitch.value] : pendingSwitch.value
+          }». Текущий диалог останется в истории.`}
+          title={pendingSwitch.kind === "language" ? "Сменить язык?" : "Сменить уровень?"}
+          onCancel={cancelPendingSwitch}
+          onConfirm={confirmPendingSwitch}
+        />
+      ) : null}
+
+      {isResetDialogOpen ? (
+        <ConfirmDialog
+          confirmLabel="Начать заново"
+          description="История текущего диалога для этого языка и уровня будет очищена."
+          title="Начать новый урок?"
+          onCancel={() => setIsResetDialogOpen(false)}
+          onConfirm={() => {
+            resetLesson();
+            setIsResetDialogOpen(false);
+          }}
+        />
+      ) : null}
     </main>
   );
 }
