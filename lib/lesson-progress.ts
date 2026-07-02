@@ -65,7 +65,10 @@ export function resolveCurrentLessonStage(messages: ChatMessage[]): LessonStageD
     }
   }
 
-  return LESSON_STAGES[0];
+  const teacherMessageCount = messages.filter((message) => message.role === "teacher").length;
+  const stageIndex = Math.min(LESSON_STAGES.length - 1, Math.max(0, teacherMessageCount - 1));
+
+  return LESSON_STAGES[stageIndex];
 }
 
 export function getLessonProgressPercent(stageNumber: LessonStageNumber): number {

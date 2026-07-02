@@ -1,6 +1,7 @@
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { buildAvatarTeacherSystemPrompt, buildFallbackTeacherReply } from "@/lib/prompts/avatar-teacher";
 import { parseTeacherResponse } from "@/lib/teacher-response";
+import { isTeacherReplyValid } from "@/lib/teacher-reply-quality";
 import type { TeacherChatRequest, TeacherChatResponse, TeacherSource } from "@/types/teacher";
 
 type OpenAIMessage = {
@@ -36,11 +37,9 @@ const OPENROUTER_TIMEOUT_MS = 12_000;
 const HISTORY_CONTEXT_LENGTH = 8;
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
-const OPENROUTER_DEFAULT_MODEL = "liquid/lfm-2.5-1.2b-instruct:free";
+const OPENROUTER_DEFAULT_MODEL = "google/gemma-4-26b-a4b-it:free";
 const OPENROUTER_FALLBACK_MODELS = [
-  "google/gemma-4-26b-a4b-it:free",
-  "google/gemma-4-31b-it:free",
-  "nvidia/nemotron-nano-12b-v2-vl:free"
+  "google/gemma-4-31b-it:free"
 ];
 
 function collectOutputText(body: OpenAIResponseBody) {
@@ -56,9 +55,17 @@ function collectOutputText(body: OpenAIResponseBody) {
 
 function buildTeacherResult(
   rawReply: string,
-  source: Exclude<TeacherSource, "fallback">
-): TeacherChatResponse {
+  source: Exclude<TeacherSource, "fallback">,
+  debugLabel?: string
+): TeacherChatResponse | null {
   const parsed = parseTeacherResponse(rawReply);
+
+  if (!isTeacherReplyValid(parsed.reply)) {
+    console.error(
+      `[teacher] ${source}${debugLabel ? ` (${debugLabel})` : ""} reply rejected by quality check`
+    );
+    return null;
+  }
 
   return {
     reply: parsed.reply,
@@ -95,7 +102,13 @@ async function requestReply(
       return null;
     }
 
-    return buildTeacherResult(reply, source);
+    const teacherResult = buildTeacherResult(reply, source, debugLabel);
+
+    if (!teacherResult) {
+      return null;
+    }
+
+    return teacherResult;
   } catch (cause) {
     console.error(`[teacher] ${source}${debugLabel ? ` (${debugLabel})` : ""} request failed`, cause);
     return null;
