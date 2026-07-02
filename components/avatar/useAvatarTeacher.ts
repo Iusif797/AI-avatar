@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { usePersistentChatHistory } from "@/hooks/usePersistentChatHistory";
 import { resolveCurrentLessonStage } from "@/lib/lesson-progress";
 import { toSpeechSegments } from "@/lib/speech";
 import type {
@@ -67,9 +68,19 @@ const initialTeacherMessage: ChatMessage = {
 };
 
 export function useAvatarTeacher(profile: TeacherProfile, avatarSpeech?: AvatarSpeechAdapter) {
-  const [messages, setMessages] = useState<ChatMessage[]>([initialTeacherMessage]);
+  const {
+    messages,
+    setMessages,
+    lastFeedback,
+    setLastFeedback,
+    isHistoryReady,
+    sessionKey
+  } = usePersistentChatHistory({
+    language: profile.language,
+    level: profile.level,
+    initialMessages: [initialTeacherMessage]
+  });
   const [status, setStatus] = useState<TeacherStatus>("idle");
-  const [lastFeedback, setLastFeedback] = useState<string>("");
   const speechIdRef = useRef(0);
 
   const currentLessonStage = useMemo(() => resolveCurrentLessonStage(messages), [messages]);
@@ -234,6 +245,8 @@ export function useAvatarTeacher(profile: TeacherProfile, avatarSpeech?: AvatarS
     status,
     lastFeedback,
     currentLessonStage,
+    isHistoryReady,
+    sessionKey,
     sendMessage,
     repeatLastTeacherMessage
   };

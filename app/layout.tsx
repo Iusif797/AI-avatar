@@ -3,7 +3,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "AI Language Tutor",
-  description: "Живой AI-аватар-учитель для изучения иврита и английского"
+  description: "Живой AI-аватар-учитель для изучения иврита и английского",
+  icons: {
+    icon: "/logo-ai.png"
+  }
 };
 
 export const viewport: Viewport = {

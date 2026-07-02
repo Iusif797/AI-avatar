@@ -13,12 +13,13 @@ import {
   Volume2
 } from "lucide-react";
 import Image from "next/image";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AvatarStage } from "@/components/avatar/AvatarStage";
 import { LessonProgressBar } from "@/components/avatar/LessonProgressBar";
 import { useAvatarTeacher } from "@/components/avatar/useAvatarTeacher";
 import { useLiveAvatarSession } from "@/components/avatar/useLiveAvatarSession";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
+import { useGuardedProfileSwitch } from "@/hooks/useGuardedProfileSwitch";
 import { usePersistentLearnerProfile } from "@/hooks/usePersistentLearnerProfile";
 import type { LearnerLevel, TargetLanguage } from "@/types/teacher";
 
@@ -55,8 +56,41 @@ export function AvatarTeacherSession() {
     [isCallMode, liveAvatar.isLiveAvatarActive, liveAvatar.repeatText, liveAvatar.speakText]
   );
 
-  const { messages, status, lastFeedback, currentLessonStage, sendMessage, repeatLastTeacherMessage } =
-    useAvatarTeacher(profile, avatarSpeech);
+  const {
+    messages,
+    status,
+    lastFeedback,
+    currentLessonStage,
+    isHistoryReady,
+    sessionKey,
+    sendMessage,
+    repeatLastTeacherMessage
+  } = useAvatarTeacher(profile, avatarSpeech);
+
+  const { requestLanguage, requestLevel } = useGuardedProfileSwitch({
+    messages,
+    language,
+    level,
+    setLanguage,
+    setLevel
+  });
+
+  const [sessionNotice, setSessionNotice] = useState("");
+  const previousSessionKeyRef = useRef(sessionKey);
+
+  useEffect(() => {
+    if (!isHistoryReady || previousSessionKeyRef.current === sessionKey) {
+      return;
+    }
+
+    previousSessionKeyRef.current = sessionKey;
+    const [sessionLanguage, sessionLevel] = sessionKey.split(":");
+    const languageLabel = sessionLanguage === "he" ? "Иврит" : "English";
+    setSessionNotice(`Загружена сохранённая сессия: ${languageLabel} · ${sessionLevel}`);
+
+    const timeoutId = window.setTimeout(() => setSessionNotice(""), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [isHistoryReady, sessionKey]);
 
   const recorder = useAudioRecorder({
     onAudioReady: async (audio) => {
@@ -110,13 +144,14 @@ export function AvatarTeacherSession() {
     <main className="min-h-screen min-h-[100dvh] overflow-x-hidden bg-[#f7f3eb] text-[#121212] flex flex-col">
       <header className="border-b border-[#121212]/10 bg-white/80 backdrop-blur-md sticky top-0 z-50">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-6 lg:px-8">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             <Image
               alt="AI Avatar Teacher"
-              className="h-7 w-7 shrink-0 rounded-md sm:h-8 sm:w-8"
-              height={32}
-              src="/logo.png"
-              width={32}
+              className="h-12 w-12 shrink-0 rounded-2xl border border-white/80 object-cover shadow-[0_12px_30px_rgba(18,18,18,0.18)] ring-1 ring-[#121212]/10 sm:h-14 sm:w-14"
+              height={56}
+              priority
+              src="/logo-ai.png"
+              width={56}
             />
             <h1 className="font-display text-lg font-semibold tracking-tight sm:text-2xl">
               AI Avatar Teacher
@@ -128,7 +163,7 @@ export function AvatarTeacherSession() {
                 language === "he" ? "bg-[#121212] text-white" : "text-[#121212]/70 hover:text-[#121212]"
               }`}
               type="button"
-              onClick={() => setLanguage("he")}
+              onClick={() => requestLanguage("he")}
             >
               Иврит
             </button>
@@ -137,7 +172,7 @@ export function AvatarTeacherSession() {
                 language === "en" ? "bg-[#121212] text-white" : "text-[#121212]/70 hover:text-[#121212]"
               }`}
               type="button"
-              onClick={() => setLanguage("en")}
+              onClick={() => requestLanguage("en")}
             >
               English
             </button>
@@ -169,7 +204,7 @@ export function AvatarTeacherSession() {
             <select
               className="min-h-[44px] rounded-md border border-[#121212]/15 bg-[#f7f3eb] px-3 py-2 text-sm font-bold text-[#121212] focus:outline-none"
               value={level}
-              onChange={(event) => setLevel(event.target.value as LearnerLevel)}
+              onChange={(event) => requestLevel(event.target.value as LearnerLevel)}
             >
               <option>A1</option>
               <option>A2</option>
@@ -180,6 +215,12 @@ export function AvatarTeacherSession() {
         </div>
 
         <div className="flex min-h-[min(72vh,640px)] flex-col overflow-hidden rounded-lg border border-[#121212]/10 bg-white shadow-soft md:min-h-0 md:h-full">
+          {sessionNotice ? (
+            <div className="border-b border-violet/20 bg-violet/10 px-4 py-2 text-xs font-semibold text-violet">
+              {sessionNotice}
+            </div>
+          ) : null}
+
           <div className="flex items-center justify-between border-b border-[#121212]/10 px-4 py-3 bg-white">
             <div className="flex items-center gap-2 font-black">
               <Bot aria-hidden="true" className="h-5 w-5 text-coral" />
@@ -230,6 +271,9 @@ export function AvatarTeacherSession() {
           {mode === "text" ? (
             <>
               <div aria-live="polite" className="flex-1 space-y-3 overflow-y-auto bg-[#fbfaf6] p-4 min-h-[300px]">
+                {!isHistoryReady ? (
+                  <p className="text-sm font-semibold text-[#121212]/45">Загружаю историю чата...</p>
+                ) : null}
                 {messages.map((message) => (
                   <article
                     className={`max-w-[85%] rounded-lg px-4 py-2.5 shadow-sm lg:max-w-[38rem] ${
