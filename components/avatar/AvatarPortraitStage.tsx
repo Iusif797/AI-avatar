@@ -48,7 +48,7 @@ export function AvatarPortraitStage({ status }: AvatarPortraitStageProps) {
         >
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-white/72">Live avatar</p>
-            <p className="mt-0.5 text-lg font-black tracking-tight">готова к уроку</p>
+            <p className="mt-0.5 text-lg font-black tracking-tight">{statusLabels[status]}</p>
           </div>
           <span className="hidden rounded-full border border-white/20 bg-white/12 px-3 py-1 text-xs font-bold backdrop-blur sm:inline-flex">
             {statusLabels[status]}

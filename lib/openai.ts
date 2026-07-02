@@ -31,13 +31,16 @@ type GeminiBody = {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
 };
 
-const LLM_TIMEOUT_MS = 12_000;
+const LLM_TIMEOUT_MS = 18_000;
+const OPENROUTER_TIMEOUT_MS = 12_000;
 const HISTORY_CONTEXT_LENGTH = 8;
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
+const OPENROUTER_DEFAULT_MODEL = "liquid/lfm-2.5-1.2b-instruct:free";
 const OPENROUTER_FALLBACK_MODELS = [
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "google/gemma-3-27b-it:free"
+  "google/gemma-4-26b-a4b-it:free",
+  "google/gemma-4-31b-it:free",
+  "nvidia/nemotron-nano-12b-v2-vl:free"
 ];
 
 function collectOutputText(body: OpenAIResponseBody) {
@@ -70,28 +73,83 @@ async function requestReply(
   source: Exclude<TeacherSource, "fallback">,
   url: string,
   init: RequestInit,
-  extractReply: (body: unknown) => string | undefined
+  extractReply: (body: unknown) => string | undefined,
+  debugLabel?: string,
+  timeoutMs = LLM_TIMEOUT_MS
 ): Promise<TeacherChatResponse | null> {
   try {
-    const response = await fetchWithTimeout(url, init, LLM_TIMEOUT_MS);
+    const response = await fetchWithTimeout(url, init, timeoutMs);
 
     if (!response.ok) {
-      console.error(`[teacher] ${source} returned ${response.status}`);
+      const errorBody = await response.text().catch(() => "");
+      console.error(
+        `[teacher] ${source}${debugLabel ? ` (${debugLabel})` : ""} returned ${response.status}: ${errorBody.slice(0, 240)}`
+      );
       return null;
     }
 
     const reply = extractReply(await response.json())?.trim();
 
     if (!reply) {
-      console.error(`[teacher] ${source} returned an empty reply`);
+      console.error(`[teacher] ${source}${debugLabel ? ` (${debugLabel})` : ""} returned an empty reply`);
       return null;
     }
 
     return buildTeacherResult(reply, source);
   } catch (cause) {
-    console.error(`[teacher] ${source} request failed`, cause);
+    console.error(`[teacher] ${source}${debugLabel ? ` (${debugLabel})` : ""} request failed`, cause);
     return null;
   }
+}
+
+function buildOpenRouterModels(): string[] {
+  const configuredModel = process.env.OPENROUTER_MODEL?.trim();
+  const models = [configuredModel, OPENROUTER_DEFAULT_MODEL, ...OPENROUTER_FALLBACK_MODELS].filter(
+    (model): model is string => Boolean(model)
+  );
+
+  return [...new Set(models)];
+}
+
+async function askOpenRouter(chatMessages: OpenAIMessage[]): Promise<TeacherChatResponse | null> {
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+
+  if (!openRouterKey) {
+    return null;
+  }
+
+  const siteUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+
+  for (const model of buildOpenRouterModels()) {
+    const result = await requestReply(
+      "openrouter",
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${openRouterKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": siteUrl,
+          "X-Title": "AI Language Tutor"
+        },
+        body: JSON.stringify({
+          model,
+          messages: chatMessages
+        })
+      },
+      (body) => (body as ChatCompletionsBody).choices?.[0]?.message?.content,
+      model,
+      OPENROUTER_TIMEOUT_MS
+    );
+
+    if (result) {
+      return result;
+    }
+  }
+
+  return null;
 }
 
 export async function askAvatarTeacher(request: TeacherChatRequest): Promise<TeacherChatResponse> {
@@ -110,6 +168,12 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
     })),
     { role: "user", content: request.userMessage }
   ];
+
+  const openRouterResult = await askOpenRouter(chatMessages);
+
+  if (openRouterResult) {
+    return openRouterResult;
+  }
 
   const geminiKey = process.env.GEMINI_API_KEY;
 
@@ -169,39 +233,6 @@ export async function askAvatarTeacher(request: TeacherChatRequest): Promise<Tea
 
     if (result) {
       return result;
-    }
-  }
-
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
-
-  if (openRouterKey) {
-    const siteUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000";
-    const models = [process.env.OPENROUTER_MODEL, ...OPENROUTER_FALLBACK_MODELS].filter(
-      (model): model is string => Boolean(model)
-    );
-
-    for (const model of models) {
-      const result = await requestReply(
-        "openrouter",
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${openRouterKey}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": siteUrl,
-            "X-Title": "AI Language Tutor"
-          },
-          body: JSON.stringify({ model, messages: chatMessages })
-        },
-        (body) => (body as ChatCompletionsBody).choices?.[0]?.message?.content
-      );
-
-      if (result) {
-        return result;
-      }
     }
   }
 

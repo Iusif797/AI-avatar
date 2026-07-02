@@ -18,10 +18,10 @@ type AvatarStageProps = {
   onUnmuteVideo: () => void;
 };
 
-export function AvatarStage({ variant, status, ...liveProps }: AvatarStageProps) {
-  if (variant === "chat") {
+export function AvatarStage({ variant, status, connectionMode, ...liveProps }: AvatarStageProps) {
+  if (variant === "chat" || connectionMode === "fallback") {
     return <AvatarPortraitStage status={status} />;
   }
 
-  return <AvatarLiveStage status={status} {...liveProps} />;
+  return <AvatarLiveStage status={status} connectionMode={connectionMode} {...liveProps} />;
 }

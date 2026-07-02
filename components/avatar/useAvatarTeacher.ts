@@ -245,7 +245,7 @@ export function useAvatarTeacher(
 
         setLastFeedback(
           feedbackParts.join(" — ") ||
-            (data.source === "fallback" ? "Демо-режим: AI-ключ не подключён, ответ учебный." : "")
+            (data.source === "fallback" ? "AI временно недоступен: проверь OPENROUTER_API_KEY на сервере или лимит free-моделей." : "")
         );
 
         if (autoSpeakOnReply) {
